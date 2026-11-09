@@ -80,18 +80,20 @@ version=$(sed -n 's/^pkgver=\([0-9][0-9.]*\)$/\1/p' "$here/PKGBUILD")
 [[ $version =~ ^([0-9]+)\.([0-9]+)\. ]] || die "no pkgver= line in $here/PKGBUILD"
 major_minor=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}
 
-# The features the SDK 1.3 documents (its features/README.md, "Common VFX
-# SDK Features") and the architectures with 1.3.0.0 Linux model packages
-# (docs/gpu-support.md).
-offered=(nvvfxartifactreduction nvvfxvideosuperres nvvfxdenoising nvvfxupscale
-    nvvfxgreenscreen nvvfxbackgroundblur)
+# The eight features NGC offers for SDK 1.3.0.0 Linux (docs/download.md,
+# "Features"; the same list as download.sh) and the architectures with
+# 1.3.0.0 Linux model packages (docs/gpu-support.md).
+offered=(nvvfxgreenscreen nvvfxbackgroundblur nvvfxdenoising nvvfxrelighting
+    nvvfxvideosuperres nvvfxupscale nvvfxtruehdr nvvfxvideoframegeneration)
 declare -A offered_name=(
-    [nvvfxartifactreduction]="Artifact reduction (the 1.1.0.0 Changelog says it was removed; check NGC)"
-    [nvvfxvideosuperres]="Video Super Resolution"
-    [nvvfxdenoising]="Video denoising"
-    [nvvfxupscale]="Video upscaling"
-    [nvvfxgreenscreen]="AI green screen"
+    [nvvfxgreenscreen]="AI green screen (background removal and replacement)"
     [nvvfxbackgroundblur]="Background blur"
+    [nvvfxdenoising]="Video noise removal"
+    [nvvfxrelighting]="Video relighting"
+    [nvvfxvideosuperres]="Video Super Resolution"
+    [nvvfxupscale]="Fast upscaling with sharpening"
+    [nvvfxtruehdr]="SDR to HDR conversion"
+    [nvvfxvideoframegeneration]="Video frame generation"
 )
 model_archs=(75 80 86 89 90 100 120)
 
@@ -382,7 +384,7 @@ else
     ((unknown == 0)) || echo "   models    $unknown file(s) whose name carries no architecture (kept by the build)"
 fi
 echo
-echo "2. Offered by the SDK $major_minor (its features/README.md, \"Common VFX SDK Features\"):"
+echo "2. Offered on NGC for the SDK ${version} Linux:"
 for f in "${offered[@]}"; do
     mark=' '
     in_list "$f" "${present[@]}" && mark=x
@@ -391,9 +393,8 @@ done
 for f in "${present[@]}"; do
     in_list "$f" "${offered[@]}" || printf '   [x] %-24s %s\n' "$f" "(present, not in the table above)"
 done
-echo "   The Changelog also names Video Relighting, TrueHDR and Video Frame Generation;"
-echo "   their NGC names are in: ngc registry model list \"nvidia/maxine/nvvfx*\""
-echo "   (or maxine-vfx/download.sh --list)."
+echo "   What each does, its size and the closest NVIDIA Broadcast name: $(q "$here/download.sh") --list"
+echo "   (NGC hides these names from wildcard listing: ngc registry model list \"nvidia/maxine/nvvfx*\" is empty.)"
 echo
 echo "3. GPU architectures with models for ${version} Linux (docs/gpu-support.md):"
 line='  '
@@ -422,8 +423,10 @@ if ((${#present[@]} > 0)); then
     echo "    $(q "$0") --src $(q "$src") --archs $(q "$suggest_archs") --features ${maxine_vfx_file_features:-all} --write"
 fi
 if [[ $layout == download ]]; then
-    echo "  fetch more into the same directory, with your own NGC CLI (download.sh runs the same commands):"
-    echo "    maxine-vfx/download.sh --dest $(q "$src") --features \"<feature> ...\" --archs \"sm_<N> ...\""
+    echo "  fetch more into the same directory, with your own NGC CLI (download.sh shows the sizes and asks first):"
+    echo "    $(q "$here/download.sh") --dest $(q "$src") --features <feature>,... --archs sm_<N>,..."
+    echo "    $(q "$here/download.sh") --dest $(q "$src") --preset all"
+    echo "  or by hand:"
     echo "    $(lib_cmd '<feature>')"
     echo "    $(models_cmd '<feature>' '<N>')"
     echo "  then run this again and build."

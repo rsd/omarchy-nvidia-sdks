@@ -27,7 +27,7 @@ gcc -O2 -o /tmp/probe tools/maxine-probe/probe.c \
 env LD_PRELOAD=/usr/lib/maxine-vfx/os-release-shim.so /tmp/probe "$MAXINE_VFX_MODEL_DIR"
 ```
 
-The environment file sets `LD_LIBRARY_PATH` to the SDK's bundled libraries and `OMA_BROADCAST_OS_RELEASE` to the packaged replacement `os-release`; do this in a throwaway shell, not in your login shell. The os-release shim is needed on a distribution the SDK does not list ([../os-release-shim/README.md](../os-release-shim/README.md)); set `LD_PRELOAD` on the probe itself, never on a wrapper in front of it.
+The environment file sets `LD_LIBRARY_PATH` to the SDK's bundled libraries and `MAXINE_OS_RELEASE` to the packaged replacement `os-release`; do this in a throwaway shell, not in your login shell. The os-release shim is needed on a distribution the SDK does not list ([../os-release-shim/README.md](../os-release-shim/README.md)); set `LD_PRELOAD` on the probe itself, never on a wrapper in front of it.
 
 Arguments: `probe [model_dir] [aigs_mode]`. `model_dir` defaults to `./models`, which usually does not exist; pass `$MAXINE_VFX_MODEL_DIR`. `aigs_mode` defaults to 0.
 
@@ -36,7 +36,7 @@ To probe another SDK tree (for example a user-prefix install), point `MAXINE_VFX
 ```sh
 export MAXINE_VFX_ROOT=~/.local/opt/maxine/VideoFX
 source tools/maxine-probe/env.sh
-export OMA_BROADCAST_OS_RELEASE=$PWD/tools/maxine-probe/fake-os-release
+export MAXINE_OS_RELEASE=$PWD/tools/maxine-probe/fake-os-release
 ```
 
 ## Files

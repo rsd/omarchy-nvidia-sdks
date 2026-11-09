@@ -107,16 +107,25 @@ check "it names the layout and the core" says "layout   download ($dl/vfx_sdk_co
 check "it lists each feature with its architectures" \
     grep -qE '^   nvvfxgreenscreen +sm_89 sm_120$' <<<"$out"
 check "a feature without models says so" grep -qE '^   nvvfxbackgroundblur +no models$' <<<"$out"
-check "the offered table marks the present features" grep -qE '^   \[x\] nvvfxgreenscreen +AI green screen$' <<<"$out"
+check "the offered table marks the present features" \
+    grep -qE '^   \[x\] nvvfxgreenscreen +AI green screen \(background removal and replacement\)$' <<<"$out"
 check "the offered table marks the absent ones" grep -qE '^   \[ \] nvvfxvideosuperres +Video Super Resolution$' <<<"$out"
-check "artifact reduction carries the Changelog note" says "the 1.1.0.0 Changelog says it was removed; check NGC"
-check "the Changelog-only features point to the ngc list" says 'ngc registry model list "nvidia/maxine/nvvfx*"'
+check "the offered table has the eight NGC features" test "$(grep -cE '^   \[[ x]\] nvvfx' <<<"$out")" = 8
+check "relighting is offered" grep -qE '^   \[ \] nvvfxrelighting +Video relighting$' <<<"$out"
+check "video frame generation is offered" grep -qE '^   \[ \] nvvfxvideoframegeneration +Video frame generation$' <<<"$out"
+check "artifact reduction (not on NGC for 1.3.0.0) is not offered" not says nvvfxartifactreduction
+check "the offered table points to download.sh --list" says "the closest NVIDIA Broadcast name: $mvfx/download.sh --list"
+check "it says NGC hides the names from wildcard listing" \
+    says 'NGC hides these names from wildcard listing: ngc registry model list "nvidia/maxine/nvvfx*" is empty.'
 check "the architecture list marks the present ones" \
     says "[ ] sm_75 [ ] sm_80 [ ] sm_86 [x] sm_89 [ ] sm_90 [ ] sm_100 [x] sm_120"
 check "there is no selection yet" says "no selection.conf ($conf)"
 check "it gives the save command" says "--src $dl --archs sm_120 --features all --write"
 check "it gives the fetch commands" \
     says "ngc registry model download-version \"nvidia/maxine/<feature>:1.3.0.0_models_linux_sm<N>\" --dest $dl"
+check "it gives the download.sh command with its flags" \
+    says "    $mvfx/download.sh --dest $dl --features <feature>,... --archs sm_<N>,..."
+check "it gives the download.sh preset" says "    $mvfx/download.sh --dest $dl --preset all"
 check "nothing is written" test ! -e "$conf"
 check "the download is untouched" test "$before" = "$(listing "$dl")"
 # The save command names configure.sh as a shell word.

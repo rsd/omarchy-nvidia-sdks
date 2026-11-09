@@ -15,6 +15,20 @@
 
 Nothing goes under `/etc`, and nothing sets `LD_LIBRARY_PATH` or `LD_PRELOAD` globally: the bundled CUDA 12 and TensorRT 10 would shadow the system's for every program. The selected features are packaged (by default every feature found in the source), with the models of the selected GPU architectures; no engine cache directory is created. The environment file records what went in: `MAXINE_VFX_FEATURES` and `MAXINE_VFX_ARCHS` (comma-separated, e.g. `nvvfxbackgroundblur,nvvfxgreenscreen` and `sm_120`), and one `features/<feature>/lib` entry per feature on the library path.
 
+## Downloading
+
+[`download.sh`](download.sh) fetches the SDK from NGC with your own, configured NGC CLI. It detects your GPU architecture, probes NGC for the sizes, prints a table, asks for confirmation, downloads only what is missing, verifies each item and retries failures:
+
+```sh
+./download.sh                     # preset broadcast (green screen, background blur, denoising) for your GPU
+./download.sh --dry-run           # table and commands only, nothing downloaded
+./download.sh --preset all --yes  # all eight features, no question
+./download.sh --list              # what NGC offers, with sizes
+./download.sh --yes --build       # download, then configure.sh --write and makepkg -f; never installs
+```
+
+The options (`--dest`, `--archs`, `--preset`, `--features`, `--version`, `--retries`, `--yes`, `--dry-run`, `--build`, `--list`), the account setup and the manual `ngc` commands are in [../docs/download.md](../docs/download.md).
+
 ## Source layouts
 
 `MAXINE_VFX_SRC` (default: this directory) may hold either:
@@ -78,13 +92,13 @@ nvidia-smi --query-gpu=compute_cap --format=csv,noheader   # 12.0 -> sm_120
 
 In an SDK tree, a model file belongs to an architecture when one of the underscore-separated fields of its name is a known SM number: `AIGS_288x512_120_m0.engine.trtpkg` is `sm_120`. Files of the other architectures are left out; a file whose name carries no SM number is kept and listed in a note. In a download, a file belongs to the architecture of its `models_linux_sm<N>` directory.
 
-Each architecture adds the model packages of every selected feature that has models. In 1.3.0.0 green screen is 8 `.engine.trtpkg` files, about 113 MB (10^6 bytes) per architecture; other features differ. Check a package before downloading it with `ngc registry model info nvidia/maxine/<feature>:<version>_models_linux_sm<N>`. The build summary prints the model size per architecture, so the cost is visible.
+Each architecture adds the model packages of every selected feature that has models. In 1.3.0.0 Linux only green screen, denoising and relighting have them; for `sm_120` that is about 113 MiB, 3.7 MiB and 79 MiB. The sizes for every architecture are in [../docs/gpu-support.md](../docs/gpu-support.md#size-cost-per-architecture). Check a package before downloading it with `ngc registry model info nvidia/maxine/<feature>:<version>_models_linux_sm<N>`. The build summary prints the model size per architecture, so the cost is visible.
 
 The build stops when a selected feature that has models in the download lacks them for a selected architecture (the message names the feature, the architecture and the NGC tag), and when a selected architecture has no model files although the source has models for others. A source without any models only warns: a download of background blur alone is valid.
 
 ### Features
 
-The features present in the source are, in an SDK tree, every `features/<feature>/` with `lib/*.so`, and in a download every `nvvfx*_v1.3.*_lib_linux/*.tar.gz`. With `MAXINE_VFX_FEATURES=all` every one of them is packaged; with a list, exactly the listed ones, and the others are left out (the build summary lists them as "present, not selected"). In a download a feature left out is not unpacked and its models are not copied. In an SDK tree its `features/<feature>/` directory is left out, but its model files cannot be told apart from the others' and stay in `lib/models` (a note says so). At least one feature must be packaged. To add a feature later, download it (its library and, if it has them, its models for your architectures) into the same directory, run `./configure.sh` again and rebuild the package; nothing in the PKGBUILD changes. The NGC names and commands are in [../docs/download.md](../docs/download.md).
+The features present in the source are, in an SDK tree, every `features/<feature>/` with `lib/*.so`, and in a download every `nvvfx*_v1.3.*_lib_linux/*.tar.gz`. With `MAXINE_VFX_FEATURES=all` every one of them is packaged; with a list, exactly the listed ones, and the others are left out (the build summary lists them as "present, not selected"). In a download a feature left out is not unpacked and its models are not copied. In an SDK tree its `features/<feature>/` directory is left out, but its model files cannot be told apart from the others' and stay in `lib/models` (a note says so). At least one feature must be packaged. To add a feature later, download it (its library and, if it has them, its models for your architectures) into the same directory, run `./configure.sh` again and rebuild the package; nothing in the PKGBUILD changes. The NGC names, sizes and commands are in [../docs/download.md](../docs/download.md#features).
 
 When a packaged feature ships a non-empty `<Name>_dependencies.txt` that names a feature which is not present, or present but not selected, the build prints a warning and goes on.
 

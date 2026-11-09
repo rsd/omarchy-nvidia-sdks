@@ -87,7 +87,8 @@ build() {
     log=$tmp/$name/makepkg.log status=0 pkg=''
     (
         cd "$repo/maxine-vfx" &&
-            env -u LD_PRELOAD -u OMA_BROADCAST_OS_RELEASE -u OMA_BROADCAST_OS_RELEASE_DEBUG \
+            env -u LD_PRELOAD -u MAXINE_OS_RELEASE -u MAXINE_OS_RELEASE_DEBUG \
+                -u OMA_BROADCAST_OS_RELEASE -u OMA_BROADCAST_OS_RELEASE_DEBUG \
                 -u MAXINE_VFX_SRC -u MAXINE_VFX_ARCHS -u MAXINE_VFX_FEATURES \
                 BUILDDIR="$tmp/$name/build" PKGDEST="$tmp/$name/pkgdest" SRCDEST="$tmp/srcdest" \
                 LOGDEST="$tmp/logdest" PKGEXT=.pkg.tar "$@" \
@@ -133,7 +134,7 @@ MAXINE_VFX_MODEL_DIR=$R/lib/models
 MAXINE_VFX_LIBRARY_PATH=$R/lib:$R/features/nvvfxbackgroundblur/lib:$R/features/nvvfxgreenscreen/lib:$R/external/cuda/lib:$R/external/tensorrt/lib
 LD_LIBRARY_PATH=$R/lib:$R/features/nvvfxbackgroundblur/lib:$R/features/nvvfxgreenscreen/lib:$R/external/cuda/lib:$R/external/tensorrt/lib
 MAXINE_VFX_OS_RELEASE_SHIM=/usr/lib/maxine-vfx/os-release-shim.so
-OMA_BROADCAST_OS_RELEASE=/usr/lib/maxine-vfx/fake-os-release
+MAXINE_OS_RELEASE=/usr/lib/maxine-vfx/fake-os-release
 MAXINE_VFX_FEATURES=nvvfxbackgroundblur,nvvfxgreenscreen
 MAXINE_VFX_ARCHS=sm_89,sm_120"
 got=$(bsdtar -xOf "$pkg" usr/share/maxine-vfx/maxine-vfx.env | grep -v '^#')

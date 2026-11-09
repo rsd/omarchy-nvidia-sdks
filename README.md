@@ -26,35 +26,33 @@ The licence of this repository's own content is stated at the end of this page.
 
 | Directory | Package | Contents |
 |---|---|---|
-| [`maxine-vfx/`](maxine-vfx/) | `maxine-vfx-sdk-local` | NVIDIA Maxine Video Effects SDK 1.3.0.0: the features and GPU architectures you download and select. The download helper fetches AI green screen and background blur by default |
+| [`maxine-vfx/`](maxine-vfx/) | `maxine-vfx-sdk-local` | NVIDIA Maxine Video Effects SDK 1.3.0.0: the features and GPU architectures you download and select. The download helper fetches AI green screen, background blur and video noise removal by default |
 
 ## Quick start
 
-1. Download the SDK files from NGC, following [docs/download.md](docs/download.md). The result is one directory, for example `~/Downloads/maxine`. The helper `maxine-vfx/download.sh` runs the downloads with your own NGC CLI once it is configured.
-2. Find your GPU architecture once, by hand. The build never probes the GPU:
+You need an NVIDIA Developer Program account, the NGC CLI, and `ngc config set` run by yourself. [docs/download.md](docs/download.md#prerequisites) has the steps. Then:
+
+1. Download the SDK files from NGC with one command:
 
    ```bash
-   nvidia-smi --query-gpu=compute_cap --format=csv,noheader   # 12.0 means sm_120
+   maxine-vfx/download.sh
    ```
 
-3. Choose your features and architectures, and save the choice (see [Choose your features and GPU](#choose-your-features-and-gpu)):
+   The script detects your GPU architecture, probes NGC, prints a table of what it would download and how big it is, asks for confirmation, downloads only what is missing, verifies the result and retries failures. Use `--dry-run` to look without downloading, `--preset all` for every feature, and `--yes` to skip the question. The options are in [docs/download.md](docs/download.md#download-with-one-command). The result is one directory, by default `~/Downloads/maxine`.
+
+2. Choose your features and architectures, and build the package. The script prints these commands with your paths filled in, and `--build` runs them for you:
 
    ```bash
    maxine-vfx/configure.sh --src ~/Downloads/maxine --archs sm_120 --features all --write
-   ```
-
-4. Build the package. The choice is read from `maxine-vfx/selection.conf`:
-
-   ```bash
    cd maxine-vfx && makepkg -f
    ```
 
-   Without `selection.conf` you can pass the same choice in the environment instead: `MAXINE_VFX_SRC=~/Downloads/maxine MAXINE_VFX_ARCHS=sm_120 MAXINE_VFX_FEATURES=all makepkg -f`.
+   `configure.sh` saves the choice in `maxine-vfx/selection.conf` (see [Choose your features and GPU](#choose-your-features-and-gpu)), and `makepkg` reads it. Without `selection.conf` you can pass the same choice in the environment: `MAXINE_VFX_SRC=~/Downloads/maxine MAXINE_VFX_ARCHS=sm_120 MAXINE_VFX_FEATURES=all makepkg -f`.
 
-5. Install it yourself: `sudo pacman -U maxine-vfx-sdk-local-*.pkg.tar.zst`. Nothing in this repository runs `sudo`.
-6. Use it from your programs, following [docs/usage.md](docs/usage.md).
+3. Install the package yourself: `sudo pacman -U maxine-vfx-sdk-local-*.pkg.tar*`. Nothing in this repository runs `sudo` or installs anything.
+4. Use it from your programs, following [docs/usage.md](docs/usage.md).
 
-The build options (`MAXINE_VFX_SRC`, `MAXINE_VFX_ARCHS`, `MAXINE_VFX_FEATURES`) are described in [maxine-vfx/README.md](maxine-vfx/README.md).
+The build options (`MAXINE_VFX_SRC`, `MAXINE_VFX_ARCHS`, `MAXINE_VFX_FEATURES`) are described in [maxine-vfx/README.md](maxine-vfx/README.md). If you prefer to type the `ngc` commands yourself, [docs/download.md](docs/download.md#download-by-hand) lists them in full.
 
 ## Choose your features and GPU
 
@@ -70,7 +68,20 @@ It reads the directory without network access and without running `ngc`, and pri
 - the features the SDK **offers** and the GPU architectures that have models for 1.3.0.0 Linux, with the ones you already have marked;
 - your current selection and the commands to change it or to fetch more.
 
-The features the SDK offers are the "Common VFX SDK Features" of its own `features/README.md`: Artifact Reduction (`nvvfxartifactreduction`; the 1.1.0.0 Changelog says it was removed, so check NGC before relying on it), Video Super Resolution (`nvvfxvideosuperres`), video denoising (`nvvfxdenoising`), video upscaling (`nvvfxupscale`), AI green screen (`nvvfxgreenscreen`) and background blur (`nvvfxbackgroundblur`). The Changelog also names Video Relighting, TrueHDR and Video Frame Generation (VFG); their NGC names are in the output of `ngc registry model list "nvidia/maxine/nvvfx*"` (or `maxine-vfx/download.sh --list`).
+SDK 1.3.0.0 for Linux offers eight features on NGC:
+
+| Feature | NGC name | Preset |
+|---|---|---|
+| AI green screen | `nvvfxgreenscreen` | broadcast, all |
+| Background blur | `nvvfxbackgroundblur` | broadcast, all |
+| Video noise removal | `nvvfxdenoising` | broadcast, all |
+| Video relighting | `nvvfxrelighting` | all |
+| Video super resolution | `nvvfxvideosuperres` | all |
+| Video upscaling | `nvvfxupscale` | all |
+| SDR to HDR (TrueHDR) | `nvvfxtruehdr` | all |
+| Video frame generation | `nvvfxvideoframegeneration` | all |
+
+The `broadcast` preset is the default of `download.sh`. Model packages exist only for green screen, denoising and relighting. Artifact reduction (`nvvfxartifactreduction`) is not on NGC for 1.3.0.0. What each feature does, its closest NVIDIA Broadcast name and its download size are in [docs/download.md](docs/download.md#features). NGC hides the Maxine items from `ngc registry model list "nvidia/maxine/nvvfx*"`, which prints an empty table, so use `maxine-vfx/download.sh --list` to see what is available.
 
 To save a selection:
 
@@ -80,18 +91,18 @@ maxine-vfx/configure.sh --src ~/Downloads/maxine --archs sm_120 --features all -
 
 This validates the selection against what is present (a feature or architecture you have not downloaded is an error, and the message names the command that fetches it) and writes `maxine-vfx/selection.conf`. The file is git-ignored because it holds a local path. The PKGBUILD reads it when it builds; it is parsed as plain `KEY=value` lines and never executed. An environment variable overrides the file, and the file overrides the built-in default. `configure.sh --show` prints the current file.
 
-To fetch more features or architectures, use `maxine-vfx/download.sh` or your own `ngc` (see [docs/download.md](docs/download.md)), run `configure.sh` again, and rebuild. Which GPUs are supported, how to find your architecture and how to fetch models for another GPU are in [docs/gpu-support.md](docs/gpu-support.md).
+To fetch more features or architectures, run `maxine-vfx/download.sh` again with `--features` or `--archs`, then `configure.sh` and `makepkg` again. Which GPUs are supported, how to find your architecture and how to fetch models for another GPU are in [docs/gpu-support.md](docs/gpu-support.md).
 
 ### Not limited to one GPU or to today's features
 
-- **Features.** `MAXINE_VFX_FEATURES` is `all` (the default: every feature found in your download is packaged) or a list such as `nvvfxgreenscreen,nvvfxbackgroundblur`: exactly those are packaged, and each must be present. To add a feature, download its library and models with your own `ngc` into the same directory, then rebuild. Discover the names with the read-only `ngc registry model list "nvidia/maxine/nvvfx*"`. The steps are in [docs/download.md](docs/download.md#more-features).
-- **GPU architectures.** `MAXINE_VFX_ARCHS` takes a list (`"sm_120 sm_89"`) or `all`. The SDK needs a Tensor-core GPU, Turing or newer; see [docs/gpu-support.md](docs/gpu-support.md). Each architecture adds the model packages of every feature that has models: in 1.3.0.0 the green screen models are about 113 MB (10^6 bytes) per architecture, and other features differ. Check a package before you download it with `ngc registry model info nvidia/maxine/<feature>:<version>_models_linux_sm<N>`.
-- **Sizes** in these documents are stated in GiB (2^30 bytes) or GB (10^9 bytes) explicitly. The SDK core tarball is 2.62 GiB (2.82 GB). The assembled SDK tree is 4.4 GiB (4,671,229,191 bytes) and the built package (`PKGEXT=.pkg.tar`) is about 4.4 GiB too.
+- **Features.** `MAXINE_VFX_FEATURES` is `all` (the default: every feature found in your download is packaged) or a list such as `nvvfxgreenscreen,nvvfxbackgroundblur`: exactly those are packaged, and each must be present. To add a feature, download its library and models into the same directory (`download.sh --features ...`, or your own `ngc`), then rebuild. The steps are in [docs/download.md](docs/download.md#more-features).
+- **GPU architectures.** `MAXINE_VFX_ARCHS` takes a list (`"sm_120 sm_89"`) or `all`. The SDK needs a Tensor-core GPU, Turing or newer; see [docs/gpu-support.md](docs/gpu-support.md). Each architecture adds the model packages of every feature that has models: for `sm_120` that is about 113 MiB for green screen, 3.7 MiB for denoising and 79 MiB for relighting. The sizes per architecture are in [docs/gpu-support.md](docs/gpu-support.md#size-cost-per-architecture).
+- **Sizes** in these documents are stated in MiB or GiB (2^20 and 2^30 bytes), or in GB (10^9 bytes), explicitly. The default download for `sm_120` is about 2.75 GiB, of which the SDK core is 2.63 GiB. The assembled SDK tree is 4.4 GiB (4,671,229,191 bytes) and the built package (`PKGEXT=.pkg.tar`) is about 4.4 GiB too.
 
 ## Roadmap
 
 - `maxine-afx/`: the Maxine Audio Effects SDK. Planned, not started.
-- `maxine-ar/`: the Maxine AR SDK, which holds eye contact (it is not part of the Video Effects SDK). Planned, not started.
+- `maxine-ar/`: the Maxine AR SDK, which holds Eye Contact and Auto Frame (they are not part of the Video Effects SDK). Planned, not started.
 
 ## Repository layout
 
@@ -103,12 +114,12 @@ LICENSE-MIT, LICENSE-APACHE
 scripts/check-no-nvidia.sh        licence guard: refuses NVIDIA files
 scripts/test.sh                   runs every check of this repository
 scripts/tests/                    tests of the guard
-docs/download.md                  the manual download steps for maxine-vfx
+docs/download.md                  downloading the SDK from NGC: the one-command path, the manual steps, sizes, troubleshooting
 docs/usage.md                     how a program uses the installed package
 docs/gpu-support.md               supported GPUs, architectures and how to fetch their models
 maxine-vfx/PKGBUILD               the package recipe
 maxine-vfx/assemble.sh            builds the SDK tree from your download
-maxine-vfx/download.sh            optional helper that calls your configured ngc
+maxine-vfx/download.sh            downloads what you need with your configured ngc: probes, shows sizes, verifies
 maxine-vfx/configure.sh           shows what your download holds and saves your selection
 maxine-vfx/selection.sh           parses selection.conf (never executes it), for the PKGBUILD and configure.sh
 maxine-vfx/README.md              build instructions for the package

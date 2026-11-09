@@ -2,7 +2,7 @@
 # Runs every check of this repository that needs no GPU, no network and no
 # NVIDIA download: shellcheck, the PKGBUILD's syntax and metadata, the shim
 # test, the fixture tests (assemble.sh, configure.sh and the selection.conf
-# parser, env.sh, the licence guard and its hooks, makepkg builds of the
+# parser, download.sh against a fake ngc, env.sh, the licence guard and its hooks, makepkg builds of the
 # PKGBUILD against a fake SDK tree) and the
 # licence guard over the whole tree. Build output goes to mktemp, never into
 # the working tree.
@@ -52,6 +52,7 @@ scripts=(
     maxine-vfx/selection.sh
     maxine-vfx/tests/assemble-test.sh
     maxine-vfx/tests/configure-test.sh
+    maxine-vfx/tests/download-test.sh
     tools/os-release-shim/test.sh
     tools/maxine-probe/env.sh
 )
@@ -69,10 +70,12 @@ if command -v makepkg >/dev/null 2>&1; then
 else
     echo "== makepkg --printsrcinfo: skipped (makepkg not found)"
 fi
-run "os-release shim test" env -u LD_PRELOAD -u OMA_BROADCAST_OS_RELEASE -u OMA_BROADCAST_OS_RELEASE_DEBUG \
+run "os-release shim test" env -u LD_PRELOAD -u MAXINE_OS_RELEASE -u MAXINE_OS_RELEASE_DEBUG \
+    -u OMA_BROADCAST_OS_RELEASE -u OMA_BROADCAST_OS_RELEASE_DEBUG \
     make -s -C tools/os-release-shim OUT="$tmp/shim" test
 run "assemble.sh fixture tests" maxine-vfx/tests/assemble-test.sh
 run "configure.sh and selection.conf tests" maxine-vfx/tests/configure-test.sh
+run "download.sh tests (fake ngc)" maxine-vfx/tests/download-test.sh
 run "env.sh tests" scripts/tests/env-sh-test.sh
 run "licence guard and hook tests" scripts/tests/check-no-nvidia-test.sh
 # Exit 77: a tool it needs (makepkg, fakeroot, bsdtar) is missing.

@@ -19,7 +19,7 @@ The package is isolated on purpose. It installs no `/etc/ld.so.conf.d` entry and
 
 ## The environment file
 
-`/usr/share/maxine-vfx/maxine-vfx.env` holds plain `KEY=value` lines without quotes or variable expansion, and comments only on their own lines. That makes it usable both as a systemd `EnvironmentFile=` and in a shell with `set -a`. The file also starts with comment lines, omitted here. Its keys, in file order, shown for the default two features (green screen and background blur) and architecture `sm_120`:
+`/usr/share/maxine-vfx/maxine-vfx.env` holds plain `KEY=value` lines without quotes or variable expansion, and comments only on their own lines. That makes it usable both as a systemd `EnvironmentFile=` and in a shell with `set -a`. The file also starts with comment lines, omitted here. Its keys, in file order, shown for two features (green screen and background blur) and architecture `sm_120`:
 
 ```
 MAXINE_VFX_ROOT=/opt/nvidia/maxine/videofx
@@ -27,7 +27,7 @@ MAXINE_VFX_MODEL_DIR=/opt/nvidia/maxine/videofx/lib/models
 MAXINE_VFX_LIBRARY_PATH=/opt/nvidia/maxine/videofx/lib:/opt/nvidia/maxine/videofx/features/nvvfxbackgroundblur/lib:/opt/nvidia/maxine/videofx/features/nvvfxgreenscreen/lib:/opt/nvidia/maxine/videofx/external/cuda/lib:/opt/nvidia/maxine/videofx/external/tensorrt/lib
 LD_LIBRARY_PATH=<same value as MAXINE_VFX_LIBRARY_PATH>
 MAXINE_VFX_OS_RELEASE_SHIM=/usr/lib/maxine-vfx/os-release-shim.so
-OMA_BROADCAST_OS_RELEASE=/usr/lib/maxine-vfx/fake-os-release
+MAXINE_OS_RELEASE=/usr/lib/maxine-vfx/fake-os-release
 MAXINE_VFX_FEATURES=nvvfxbackgroundblur,nvvfxgreenscreen
 MAXINE_VFX_ARCHS=sm_120
 ```
@@ -51,9 +51,18 @@ Never source the file from a login profile, `~/.bashrc` or `~/.profile`. The bun
 
 The SDK's model loader reads `/etc/os-release` and refuses distributions that are not on NVIDIA's list. The error it returns, `-1209` ("no kernel image is available for execution on the device"), is misleading: no CUDA error occurs, and only the `ID` and `VERSION_ID` fields are read.
 
-`os-release-shim.so` is a compatibility shim for distributions the SDK does not list. It is an `LD_PRELOAD` library: inside a process that preloads it, a read-only open of exactly `/etc/os-release` opens the file named by the environment variable `OMA_BROADCAST_OS_RELEASE` instead, and every other call passes through unchanged. Only that process is affected, the real file is untouched and no root is needed. The shim does not modify the SDK, the models or their encryption. NVIDIA does not support this configuration.
+`os-release-shim.so` is a compatibility shim for distributions the SDK does not list. It is an `LD_PRELOAD` library: inside a process that preloads it, a read-only open of exactly `/etc/os-release` opens the file named by the environment variable `MAXINE_OS_RELEASE` instead, and every other call passes through unchanged. Only that process is affected, the real file is untouched and no root is needed. The shim does not modify the SDK, the models or their encryption. NVIDIA does not support this configuration.
 
-The variable names `OMA_BROADCAST_OS_RELEASE` and `OMA_BROADCAST_OS_RELEASE_DEBUG` are historical: the shim was first written for the oma-broadcast project and keeps its names. Set `OMA_BROADCAST_OS_RELEASE_DEBUG=1` to make the shim log each redirect on stderr, which shows whether it is active.
+Set `MAXINE_OS_RELEASE_DEBUG=1` to make the shim log each redirect on stderr, which shows whether it is active. The package's environment file sets only `MAXINE_OS_RELEASE`.
+
+### Deprecated names
+
+The shim used to read `OMA_BROADCAST_OS_RELEASE` and `OMA_BROADCAST_OS_RELEASE_DEBUG`. Those names are deprecated but still read, for programs that have not been updated yet. They apply per variable, as follows:
+
+- If the new name is set in the environment, even to an empty string, it is used and the old name is ignored.
+- If only the old name is set, it is used, and the shim prints one note per process on stderr: `os-release-shim: OMA_BROADCAST_OS_RELEASE is deprecated, use MAXINE_OS_RELEASE` (and the same for `_DEBUG`).
+
+The old names will be removed in a later release. Use the new names in anything you write.
 
 The replacement file `/usr/lib/maxine-vfx/fake-os-release` reads:
 
@@ -87,7 +96,7 @@ EnvironmentFile=/usr/share/maxine-vfx/maxine-vfx.env
 Environment=LD_PRELOAD=/usr/lib/maxine-vfx/os-release-shim.so
 ```
 
-Example for oma-broadcast, `~/.config/systemd/user/oma-broadcastd.service.d/maxine.conf`, with the same content:
+Example for omarchy-broadcast, `~/.config/systemd/user/omarchy-broadcastd.service.d/maxine.conf`, with the same content:
 
 ```ini
 [Service]
@@ -99,7 +108,7 @@ Then:
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user restart oma-broadcastd.service
+systemctl --user restart omarchy-broadcastd.service
 ```
 
 Remove the file, reload and restart to go back to the unit without the SDK.
@@ -128,7 +137,7 @@ optdepends=('maxine-vfx-sdk-local: NVIDIA Maxine video effects')
 
 The package also provides `maxine-vfx-sdk=1.3.0.0`. A consumer that needs particular features can check `MAXINE_VFX_FEATURES` in the environment file at run time; it lists the features that were packaged.
 
-When you build the package for a consumer, name the features it needs with `MAXINE_VFX_FEATURES=<list>`: the build fails when one of them is missing from your download. oma-broadcast, for example, needs green screen and background blur, so build with `MAXINE_VFX_FEATURES=nvvfxgreenscreen,nvvfxbackgroundblur`, or with `MAXINE_VFX_FEATURES=all` to package everything you downloaded. `maxine-vfx/configure.sh --src <dir>` shows what your download holds and `--write` saves the choice in the git-ignored `maxine-vfx/selection.conf` (an environment variable overrides it). The GPU architectures you can package are in [gpu-support.md](gpu-support.md).
+When you build the package for a consumer, name the features it needs with `MAXINE_VFX_FEATURES=<list>`: the build fails when one of them is missing from your download. omarchy-broadcast, for example, needs green screen and background blur, so build with `MAXINE_VFX_FEATURES=nvvfxgreenscreen,nvvfxbackgroundblur`, or with `MAXINE_VFX_FEATURES=all` to package everything you downloaded. `maxine-vfx/configure.sh --src <dir>` shows what your download holds and `--write` saves the choice in the git-ignored `maxine-vfx/selection.conf` (an environment variable overrides it). The GPU architectures you can package are in [gpu-support.md](gpu-support.md).
 
 ## Check the installation
 
@@ -148,7 +157,7 @@ NVIDIA's own tarball ships 8 dangling symlinks in `external/cuda`: 7 headers, `e
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `NvVFX_Load` returns `-1209`, "no kernel image is available" | `/etc/os-release` is not an accepted distribution. Not a real CUDA error | Preload the shim on the program itself (not on a wrapper), check that `OMA_BROADCAST_OS_RELEASE` is an absolute path to a file with both `ID=` and `VERSION_ID=`, and run with `OMA_BROADCAST_OS_RELEASE_DEBUG=1` to see the redirect |
+| `NvVFX_Load` returns `-1209`, "no kernel image is available" | `/etc/os-release` is not an accepted distribution. Not a real CUDA error | Preload the shim on the program itself (not on a wrapper), check that `MAXINE_OS_RELEASE` is an absolute path to a file with both `ID=` and `VERSION_ID=`, and run with `MAXINE_OS_RELEASE_DEBUG=1` to see the redirect. The deprecated old names still work, with a note on stderr: see [Deprecated names](#deprecated-names) |
 | `NvVFX_CreateEffect` returns `-2` (unimplemented) | The feature libraries (for example `libnvVFXGreenScreen.so` and `libnvVFXBackgroundBlur.so`) are not found by `dlopen` | Apply the environment file, which puts `features/<feature>/lib` on `LD_LIBRARY_PATH`; check that the feature was in the package |
 | `NvVFX_Load` returns `-13` ("file could not be found") | The model directory is wrong or the models are missing | Pass `MAXINE_VFX_MODEL_DIR` as `NVVFX_MODEL_DIRECTORY`; check that `ls /opt/nvidia/maxine/videofx/lib/models` shows `.trtpkg` files for your architecture |
 | `libcudart.so.12`, `libnpp*.so.12`, `libcudnn.so.9` or `libnvinfer.so.10` not found | The bundled `external/cuda/lib` and `external/tensorrt/lib` are not on `LD_LIBRARY_PATH` | Apply the environment file and repeat the `ldd` check above |

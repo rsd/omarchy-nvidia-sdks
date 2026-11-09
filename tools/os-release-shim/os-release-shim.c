@@ -4,7 +4,7 @@
 // The NVIDIA Maxine Video Effects SDK's model loader reads /etc/os-release
 // and refuses distributions it does not list (docs/setup/maxine.md,
 // section 7). This library redirects read-only opens of exactly
-// "/etc/os-release" to the file named by $OMA_BROADCAST_OS_RELEASE, in the
+// "/etc/os-release" to the file named by $MAXINE_OS_RELEASE, in the
 // process that preloads it and nowhere else. Every other call passes
 // through unchanged. See README.md next to this file.
 //
@@ -16,16 +16,23 @@
 //   - Only read-only opens are redirected (O_RDONLY without O_CREAT or
 //     O_TRUNC; fopen modes "r", "rb", "re", ... without '+'). A write goes
 //     to the real path, never to the replacement file.
-//   - $OMA_BROADCAST_OS_RELEASE must be an absolute path. If it is unset,
+//   - $MAXINE_OS_RELEASE must be an absolute path. If it is unset,
 //     empty, relative or too long, nothing is redirected (a warning goes to
 //     stderr when it is set but unusable).
 //   - If the replacement file cannot be opened, the real file is opened
 //     instead, so the process behaves as it would without the shim.
 //   - At load time the library removes LD_PRELOAD from the environment, so
 //     child processes do not inherit it (the whole variable: other preloads
-//     listed in it are not passed on either). $OMA_BROADCAST_OS_RELEASE is
-//     kept. The configuration is read once, at that point.
-//   - $OMA_BROADCAST_OS_RELEASE_DEBUG=1 logs each redirect to stderr.
+//     listed in it are not passed on either). $MAXINE_OS_RELEASE is kept.
+//     The configuration is read once, at that point.
+//   - $MAXINE_OS_RELEASE_DEBUG=1 logs each redirect to stderr.
+//   - Deprecated: $OMA_BROADCAST_OS_RELEASE and
+//     $OMA_BROADCAST_OS_RELEASE_DEBUG, the names from the omarchy-broadcast
+//     project, are still read, each only when its new name is not set (a
+//     new name set to the empty string still wins), with one note on stderr
+//     per process. The consumer sets them until it moves to the new names;
+//     they will be removed in a later release. Neither name is removed from
+//     the environment.
 //
 // Real symbols are resolved with dlsym(RTLD_NEXT, ...) on first use. If a
 // lookup would recurse (dlsym itself opening a file on the same thread) or
@@ -53,8 +60,11 @@
 #define EXPORT __attribute__((visibility("default")))
 
 static const char kTarget[] = "/etc/os-release";
-static const char kEnvPath[] = "OMA_BROADCAST_OS_RELEASE";
-static const char kEnvDebug[] = "OMA_BROADCAST_OS_RELEASE_DEBUG";
+static const char kEnvPath[] = "MAXINE_OS_RELEASE";
+static const char kEnvDebug[] = "MAXINE_OS_RELEASE_DEBUG";
+// Deprecated fallbacks for the two names above (see the rules at the top).
+static const char kOldEnvPath[] = "OMA_BROADCAST_OS_RELEASE";
+static const char kOldEnvDebug[] = "OMA_BROADCAST_OS_RELEASE_DEBUG";
 
 // ---------------------------------------------------------------------------
 // Configuration, read once.
@@ -103,17 +113,35 @@ static void env_remove(const char *name) {
     *w = NULL;
 }
 
+// Returns the value of `name` if it is set (even empty); otherwise the value
+// of its deprecated name `old`, with a note on stderr, if that is set; else
+// NULL. *used receives the name the value came from, for later messages.
+// Called only from config_init, so each note appears at most once per
+// process.
+static const char *env_get_compat(const char *name, const char *old, const char **used) {
+    *used = name;
+    const char *v = env_get(name);
+    if (v != NULL) return v;
+    v = env_get(old);
+    if (v != NULL) {
+        *used = old;
+        log_line(old, " is deprecated, use ", name);
+    }
+    return v;
+}
+
 static void config_init(void) {
-    const char *d = env_get(kEnvDebug);
+    const char *name;
+    const char *d = env_get_compat(kEnvDebug, kOldEnvDebug, &name);
     debug = d != NULL && strcmp(d, "1") == 0;
 
-    const char *p = env_get(kEnvPath);
+    const char *p = env_get_compat(kEnvPath, kOldEnvPath, &name);
     if (p != NULL && p[0] != '\0') {
         size_t len = strlen(p);
         if (p[0] != '/') {
-            log_line(kEnvPath, " is not an absolute path; not redirecting: ", p);
+            log_line(name, " is not an absolute path; not redirecting: ", p);
         } else if (len >= sizeof fake_path) {
-            log_line(kEnvPath, " is too long; not redirecting", NULL);
+            log_line(name, " is too long; not redirecting", NULL);
         } else {
             memcpy(fake_path, p, len + 1);
         }

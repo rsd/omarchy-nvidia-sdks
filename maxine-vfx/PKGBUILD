@@ -52,7 +52,7 @@
 
 pkgname=maxine-vfx-sdk-local
 pkgver=1.3.0.0
-pkgrel=1
+pkgrel=2
 pkgdesc="NVIDIA Maxine Video Effects SDK, packaged from the user's own download (personal use, not redistributable)"
 arch=('x86_64')
 url='https://catalog.ngc.nvidia.com/orgs/nvidia/maxine/resources/vfx_sdk_core'
@@ -108,7 +108,8 @@ build() {
 
 check() {
   # A shim or Maxine environment of the builder must not leak into the test.
-  env -u LD_PRELOAD -u OMA_BROADCAST_OS_RELEASE -u OMA_BROADCAST_OS_RELEASE_DEBUG \
+  env -u LD_PRELOAD -u MAXINE_OS_RELEASE -u MAXINE_OS_RELEASE_DEBUG \
+    -u OMA_BROADCAST_OS_RELEASE -u OMA_BROADCAST_OS_RELEASE_DEBUG \
     make -C "$_repo/tools/os-release-shim" OUT="$srcdir/shim" test
 }
 
@@ -164,23 +165,23 @@ MAXINE_VFX_MODEL_DIR=$_root/lib/models
 MAXINE_VFX_LIBRARY_PATH=$libpath
 LD_LIBRARY_PATH=$libpath
 MAXINE_VFX_OS_RELEASE_SHIM=/usr/lib/maxine-vfx/os-release-shim.so
-OMA_BROADCAST_OS_RELEASE=/usr/lib/maxine-vfx/fake-os-release
+MAXINE_OS_RELEASE=/usr/lib/maxine-vfx/fake-os-release
 MAXINE_VFX_FEATURES=$features
 MAXINE_VFX_ARCHS=$archs
 EOF
   chmod 644 "$envfile"
   local dir
-  # Every key as specified, and no quote, $, space, LD_PRELOAD or other
-  # non-KEY=value line outside the comments.
+  # Every key as specified, and no quote, $, space, LD_PRELOAD, deprecated
+  # OMA_BROADCAST_* name or other non-KEY=value line outside the comments.
   if ! { grep -qx "MAXINE_VFX_ROOT=$_root" "$envfile" &&
     grep -qx "MAXINE_VFX_MODEL_DIR=$_root/lib/models" "$envfile" &&
     grep -qx "MAXINE_VFX_LIBRARY_PATH=$libpath" "$envfile" &&
     grep -qx "LD_LIBRARY_PATH=$libpath" "$envfile" &&
     grep -qx 'MAXINE_VFX_OS_RELEASE_SHIM=/usr/lib/maxine-vfx/os-release-shim.so' "$envfile" &&
-    grep -qx 'OMA_BROADCAST_OS_RELEASE=/usr/lib/maxine-vfx/fake-os-release' "$envfile" &&
+    grep -qx 'MAXINE_OS_RELEASE=/usr/lib/maxine-vfx/fake-os-release' "$envfile" &&
     grep -qx "MAXINE_VFX_FEATURES=$features" "$envfile" &&
     grep -qx "MAXINE_VFX_ARCHS=$archs" "$envfile" &&
-    ! grep -v '^#' "$envfile" | grep -q -e '["'\''$ ]' -e '^LD_PRELOAD=' -e '^[^=]*$'; }; then
+    ! grep -v '^#' "$envfile" | grep -q -e '["'\''$ ]' -e '^LD_PRELOAD=' -e '^OMA_BROADCAST_' -e '^[^=]*$'; }; then
     echo 'maxine-vfx.env: the generated file is not as expected' >&2
     return 1
   fi

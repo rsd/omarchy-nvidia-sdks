@@ -26,7 +26,7 @@ Notes on the table:
 - **The example GPUs are for orientation only.** The authoritative check is the compute capability that your driver reports (next section) and NVIDIA's CUDA GPUs page.
 - **The last column** is the architecture number as it appears in the AI green screen model file names: `AIGS_288x512_<N>_m{0..3}[_1_4_8].engine.trtpkg`, where `<N>` is the number without the dot and `m0` to `m3` are the four model variants. Other features name their files differently.
 - **`sm_100`.** The SDK's README names `b200` as the `-g` value. The internal map of `install_feature.sh` also accepts `b100`. This page uses `b200`.
-- **Models exist per feature.** The tag is the same for every feature that has models; background blur has none.
+- **Models exist per feature.** In 1.3.0.0 Linux only AI green screen (`nvvfxgreenscreen`), video noise removal (`nvvfxdenoising`) and video relighting (`nvvfxrelighting`) have model packages. The tag pattern is the same for the three. The other five features (background blur, video super resolution, upscale, TrueHDR and video frame generation) are a library only.
 - **In-between values.** A GPU whose compute capability is not in the table (for example 8.7 or 12.1) has no exact model package. Choosing the closest architecture is an untested combination that the loader may refuse.
 
 ## Find your architecture
@@ -37,45 +37,59 @@ Look it up once, by hand:
 nvidia-smi --query-gpu=compute_cap --format=csv,noheader
 ```
 
-The output `12.0` means `sm_120`, `8.9` means `sm_89`. Remove the dot to get the number.
+The output has one line per GPU. `12.0` means `sm_120`, `8.6` means `sm_86`, `10.0` means `sm_100`: remove the dot. Below 7.5 the GPU is not supported. A value that is not in the table has no model package.
 
-Neither the package build nor the helper scripts run `nvidia-smi` for you: querying the GPU wakes a sleeping discrete GPU. `maxine-vfx/configure.sh --detect-gpu` runs the same query, but only when you ask for it.
+`maxine-vfx/download.sh` runs this query itself when you do not pass `--archs` (`--archs auto`, the default), and uses every different architecture it finds. `maxine-vfx/configure.sh --detect-gpu` runs the same query when you ask for it. The package build never queries the GPU: you select the architectures explicitly.
 
 ## Fetching models for another GPU
 
 To use a GPU of another architecture (a second machine, a new card), fetch that architecture's models into your download directory, select it, and build again. Use the architecture from the table, here `sm_89`:
 
-1. Download the model packages of every feature you use. With your configured NGC CLI, for one feature:
+1. Download the model packages of every feature you use. The helper does this for the architecture you name, here `sm_89`, and for the features of the chosen preset (`broadcast` by default; `--preset all` adds relighting):
 
    ```bash
-   ngc registry model download-version "nvidia/maxine/nvvfxgreenscreen:1.3.0.0_models_linux_sm89" --dest "$DIR"
+   maxine-vfx/download.sh --archs sm_89
    ```
 
-   or, for every feature in the helper's list at once:
+   Or with your configured NGC CLI, for one feature:
 
    ```bash
-   maxine-vfx/download.sh --dest "$DIR" --archs sm_89
+   ngc registry model download-version nvidia/maxine/nvvfxgreenscreen:1.3.0.0_models_linux_sm89 --dest ~/Downloads/maxine
    ```
 
-2. Select the architectures to package. This validates against what is present in `$DIR` and writes `maxine-vfx/selection.conf`:
+   Both put the new directories next to the ones you already have. Repeat for denoising and relighting if you use them. To see what NGC offers for an architecture first, run `maxine-vfx/download.sh --list --archs sm_89`.
+
+2. Select the architectures to package. This validates against what is present in `~/Downloads/maxine` and writes `maxine-vfx/selection.conf`:
 
    ```bash
-   maxine-vfx/configure.sh --src "$DIR" --archs "sm_120 sm_89" --write
+   maxine-vfx/configure.sh --src ~/Downloads/maxine --archs "sm_120 sm_89" --write
    ```
 
 3. Rebuild and reinstall the package, as described in [download.md](download.md#next-step).
 
-`configure.sh --src "$DIR"` without other options lists what your download contains and what the SDK offers; see [download.md](download.md) and the [README](../README.md#choose-your-features-and-gpu).
+`configure.sh --src ~/Downloads/maxine` without other options lists what your download contains and what the SDK offers; see [download.md](download.md) and the [README](../README.md#choose-your-features-and-gpu).
 
 ### Size cost per architecture
 
-Each architecture adds the model packages of every feature that has models. In 1.3.0.0 the AI green screen is 8 `.engine.trtpkg` files, about 113 MB (10^6 bytes) per architecture. Other features differ. Check a package before you download it:
+Each architecture adds the model packages of green screen, denoising and relighting, the three features that have models. Sizes as NGC reports them for 1.3.0.0 Linux, in MiB (2^20 bytes):
+
+| Architecture | Green screen models | Denoising models | Relighting models |
+|---|---|---|---|
+| `sm_75` | 99.33 | 0.80 | 75.62 |
+| `sm_80` | 113.10 | 1.84 | 76.79 |
+| `sm_86` | 108.34 | 1.79 | 78.61 |
+| `sm_89` | 109.41 | 2.30 | 76.76 |
+| `sm_90` | 113.45 | 3.60 | 77.97 |
+| `sm_100` | 117.21 | 2.76 | 104.30 |
+| `sm_120` | 113.14 | 3.72 | 79.46 |
+
+The default preset (`broadcast`) needs green screen and denoising models only. Relighting models come with `--preset all` or `--features`. You can check a package before you download it:
 
 ```bash
-ngc registry model info "nvidia/maxine/<feature>:1.3.0.0_models_linux_sm<N>"
+ngc registry model info nvidia/maxine/nvvfxgreenscreen:1.3.0.0_models_linux_sm120
 ```
 
-Package only the architectures of the machines you build for.
+Package only the architectures of the machines you build for. The sizes of the SDK core and of the libraries are in [download.md](download.md#sizes).
 
 ## NVIDIA's `install_feature.sh`: documented only, never run
 
@@ -95,4 +109,4 @@ The NGC resource names it uses, read from the script, are the same ones this rep
 | Feature discovery | the collections `maxine_vfx_sdk` and `vfx_sdk` |
 | The core SDK | the resource `nvidia/maxine/vfx_sdk_core:<ver>_linux` |
 
-The equivalent for this package is the `ngc registry model download-version` command above, or `maxine-vfx/download.sh`, both of which create the layout the build reads.
+The equivalent for this package is `maxine-vfx/download.sh`, or the `ngc registry model download-version` commands in [download.md](download.md#download-by-hand), both of which create the layout the build reads.
