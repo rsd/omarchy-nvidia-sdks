@@ -124,7 +124,7 @@ MAXINE_VFX_SRC=~/Downloads/maxine MAXINE_VFX_FEATURES=nvvfxgreenscreen,nvvfxback
 The package is about 4.4 GiB with green screen and background blur for one architecture; `PKGEXT=.pkg.tar` in front of `makepkg` skips a slow compression. Then install it yourself:
 
 ```sh
-sudo pacman -U maxine-vfx-sdk-local-1.3.0.0-1-x86_64.pkg.tar*
+sudo pacman -U maxine-vfx-sdk-local-*-x86_64.pkg.tar*
 ```
 
 Disk space: the SDK tree is about 4.4 GiB. The build copies it into `src/` and `pkg/` and writes the package file; on btrfs (or another filesystem with reflinks) the copies share their data, otherwise plan for about three times the tree's size, plus the installed tree. `makepkg -c` removes `src/` and `pkg/` after the build.
