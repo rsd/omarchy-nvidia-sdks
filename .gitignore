@@ -1,0 +1,43 @@
+# This repository holds recipes only. Nothing from NVIDIA is ever committed:
+# no SDK files, libraries, headers, models, archives or licence PDFs.
+# scripts/check-no-nvidia.sh (the pre-commit hook) enforces the same rules.
+
+# Build output: the shim build, makepkg's work directories, built packages.
+build/
+target/
+maxine-vfx/src/
+maxine-vfx/pkg/
+*.pkg.tar*
+
+# Libraries and TensorRT models.
+*.so
+*.so.*
+*.a
+*.trtpkg
+*.engine
+
+# Archives and documents as NVIDIA ships them (SDK tarballs, licence PDFs).
+*.tgz
+*.tar
+*.tar.gz
+*.tar.xz
+*.tar.zst
+*.zip
+*.pdf
+*.whl
+
+# SDK trees and NGC download directories, e.g. when the user's download sits
+# next to the PKGBUILD (MAXINE_VFX_SRC defaults to maxine-vfx/).
+VideoFX/
+vfx_sdk_core_v*/
+nvvfx*_v*/
+nvafx*_v*/
+
+# The local build selection written by maxine-vfx/configure.sh: it holds a
+# path on this machine.
+maxine-vfx/selection.conf
+maxine-vfx/.selection.conf.*
+
+# NGC CLI configuration (holds the API key) and download logs.
+.ngc/
+*.log
