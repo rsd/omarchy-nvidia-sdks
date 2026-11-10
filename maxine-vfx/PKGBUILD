@@ -52,7 +52,7 @@
 
 pkgname=maxine-vfx-sdk-local
 pkgver=1.3.0.0
-pkgrel=2
+pkgrel=3
 pkgdesc="NVIDIA Maxine Video Effects SDK, packaged from the user's own download (personal use, not redistributable)"
 arch=('x86_64')
 url='https://catalog.ngc.nvidia.com/orgs/nvidia/maxine/resources/vfx_sdk_core'

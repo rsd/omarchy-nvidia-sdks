@@ -17,7 +17,7 @@ Both need the prerequisites below and both use your own, configured NGC CLI. Rea
 | Driver | 570.26 or newer | `nvidia-smi --query-gpu=driver_version --format=csv,noheader` |
 | System CUDA toolkit | Not needed. The SDK bundles CUDA 12.8, cuDNN 9 and TensorRT 10 and takes only `libcuda.so.1` from the driver (`nvidia-utils`) | |
 | Tools | `curl`, `unzip`, `jq` (to install the NGC CLI) | `pacman -S --needed curl unzip jq` |
-| Disk | The default download (SDK core, three feature libraries, two model sets, one architecture) is about 2.75 GiB. The extracted SDK tree is 4.4 GiB (4,671,229,191 bytes), the built package (`PKGEXT=.pkg.tar`) is about 4.4 GiB too, and `makepkg` needs space for its working copy as well. More features and architectures add to this: see [Sizes](#sizes) | `df -h ~` |
+| Disk | The default download (SDK core, three feature libraries, two model sets, one architecture) is about 2.75 GiB. The extracted SDK tree is 4.4 GiB (4,671,229,191 bytes), the built package (`PKGEXT=.pkg.tar`) is about 4.4 GiB too. With all eight features and `sm_120` models the tree is 5,054,183,158 bytes (4.71 GiB) and the package about 4.7 GiB. `makepkg` needs space for its working copy as well. More features and architectures add to this: see [Sizes](#sizes) | `df -h ~` |
 
 ### 1. NVIDIA account and access (manual)
 
@@ -229,6 +229,10 @@ Totals for `sm_120`:
 |---|---|---|
 | `broadcast` (default) | core, green screen, background blur, denoising | 2,949,781,243 bytes, about 2.75 GiB |
 | `all` | `broadcast` plus relighting, video super resolution, upscale, TrueHDR and video frame generation | 3,276,703,656 bytes, about 3.05 GiB |
+
+For `sm_120`, the five features that `all` adds add 326,922,413 bytes (about 312 MiB) to the download: relighting library 2.4 MiB plus `sm_120` models 79.5 MiB, video super resolution 46.8 MiB, upscale 1.5 MiB, TrueHDR 2.2 MiB and video frame generation 179.3 MiB. Only relighting has models. The assembled SDK tree with all eight features and `sm_120` models is 5,054,183,158 bytes (4.71 GiB).
+
+All eight features were checked to create and load their effect on an `sm_120` GPU with driver 615.78. This was a load check, not a benchmark.
 
 The SDK core is by far the largest item. Each extra GPU architecture adds the model packages of every feature that has models. The per-architecture sizes are in [gpu-support.md](gpu-support.md#size-cost-per-architecture). The build prints the model size per architecture at the end, so the cost of the finished package is visible. Package only the architectures of the machines you build for.
 

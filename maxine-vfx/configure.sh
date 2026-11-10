@@ -375,7 +375,7 @@ if [[ $layout == download ]]; then
     fi
     for f in "${present[@]}"; do
         fa=${feature_archs[$f]}
-        printf '   %-24s %s\n' "$f" "$([[ $fa == - ]] && echo "no models" || echo "${fa//,/ }")"
+        printf '   %-26s %s\n' "$f" "$([[ $fa == - ]] && echo "no models" || echo "${fa//,/ }")"
     done
 else
     echo "1. Present in the SDK tree:"
@@ -388,10 +388,10 @@ echo "2. Offered on NGC for the SDK ${version} Linux:"
 for f in "${offered[@]}"; do
     mark=' '
     in_list "$f" "${present[@]}" && mark=x
-    printf '   [%s] %-24s %s\n' "$mark" "$f" "${offered_name[$f]}"
+    printf '   [%s] %-26s %s\n' "$mark" "$f" "${offered_name[$f]}"
 done
 for f in "${present[@]}"; do
-    in_list "$f" "${offered[@]}" || printf '   [x] %-24s %s\n' "$f" "(present, not in the table above)"
+    in_list "$f" "${offered[@]}" || printf '   [x] %-26s %s\n' "$f" "(present, not in the table above)"
 done
 echo "   What each does, its size and the closest NVIDIA Broadcast name: $(q "$here/download.sh") --list"
 echo "   (NGC hides these names from wildcard listing: ngc registry model list \"nvidia/maxine/nvvfx*\" is empty.)"

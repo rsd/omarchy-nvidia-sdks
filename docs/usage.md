@@ -149,6 +149,25 @@ pacman -Ql maxine-vfx-sdk-local | head
 
 With the environment file applied, the `ldd` command prints nothing.
 
+## Features: effect selectors and headers
+
+A program creates an effect with `NvVFX_CreateEffect(selector, &handle)`. The selector string, the header macro and the header for each feature, under `/opt/nvidia/maxine/videofx`:
+
+| Feature | Selector | Header macro | Header | Image formats |
+|---|---|---|---|---|
+| `nvvfxgreenscreen` | `"GreenScreen"` | `NVVFX_FX_GREEN_SCREEN` | `features/nvvfxgreenscreen/include/nvVFXGreenScreen.h` | in BGR U8 chunky, out A U8 mask |
+| `nvvfxbackgroundblur` | `"BackgroundBlur"` | `NVVFX_FX_BGBLUR` | `features/nvvfxbackgroundblur/include/nvVFXBackgroundBlur.h` | in BGR U8 plus an optional A or Y U8 mask, out BGR U8 |
+| `nvvfxdenoising` | `"Denoising"` | `NVVFX_FX_DENOISING` | `features/nvvfxdenoising/include/nvVFXDenoising.h` | BGR U8 chunky, or normalized BGR F32 planar; needs a state array (`NVVFX_STATE`) before `Run` |
+| `nvvfxrelighting` | `"Relighting"` | `NVVFX_FX_RELIGHTING` | `features/nvvfxrelighting/include/nvVFXRelighting.h` | in0 BGR or RGB U8; in1 A U8 matte (from green screen); HDRI RGB or BGR F32, 2:1, on `NVVFX_INPUT_HDR_RELIGHTING_IMAGE`; out BGR or RGB U8 foreground (background pixels are invalid, composite it) |
+| `nvvfxvideosuperres` | `"VideoSuperRes"` | `NVVFX_FX_VIDEO_SUPER_RES` | `features/nvvfxvideosuperres/include/nvVFXVideoSuperRes.h` | RGBA or BGRA U8, or RGB10A2 P32 via `ImageEncodingMode`; modes 8-15 (denoise, deblur) keep the size; needs driver 570.190+, 580.82+ or 590.44+ |
+| `nvvfxupscale` | `"Upscale"` | `NVVFX_FX_SR_UPSCALE` | `features/nvvfxupscale/include/nvVFXUpscale.h` | RGBA U8 in and out; 1.33x, 1.5x, 2x, 3x, 4x |
+| `nvvfxtruehdr` | `"TrueHDR"` | `NVVFX_FX_TRUE_HDR` | `features/nvvfxtruehdr/include/nvVFXTrueHDR.h` | in RGBA U8, out RGB10A2 P32 (HDR10 PQ) |
+| `nvvfxvideoframegeneration` | `"VideoFrameGeneration"` | `NVVFX_FX_VIDEO_FRAME_GENERATION` | `features/nvvfxvideoframegeneration/include/nvVFXVideoFrameGeneration.h` | `SrcImage0` previous and `SrcImage1` current frame, RGBA or BGRA U8, or RGB10A2 P32; `InputWidth` and `InputHeight` must be set before `NvVFX_Load` |
+
+The core headers are `include/nvVideoEffects.h`, `include/nvCVImage.h` and `include/nvCVStatus.h`. `NvVFX_GetString(effect, NVVFX_INFO, ...)` returns each effect's parameter list.
+
+All eight features were checked to create and load their effect on an `sm_120` GPU with driver 615.78. This was a load check, not a benchmark.
+
 ## Bundled cuDNN headers
 
 NVIDIA's own tarball ships 8 dangling symlinks in `external/cuda`: 7 headers, `external/cuda/include/cudnn*.h -> /etc/alternatives/libcudnn*` (Debian's alternatives system, absent on Arch), and `external/cuda/lib/libcudnn.so -> libcudnn9.so.9`, whose target the SDK does not ship. The package keeps all 8 as shipped. Using the Video Effects API does not need them. A program that compiles against the bundled cuDNN headers, or links with `-lcudnn`, needs the real cuDNN from elsewhere.

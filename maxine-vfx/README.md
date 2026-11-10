@@ -121,13 +121,13 @@ MAXINE_VFX_SRC=~/Downloads/maxine MAXINE_VFX_ARCHS="sm_120 sm_89" makepkg -f
 MAXINE_VFX_SRC=~/Downloads/maxine MAXINE_VFX_FEATURES=nvvfxgreenscreen,nvvfxbackgroundblur makepkg -f
 ```
 
-The package is about 4.4 GiB with green screen and background blur for one architecture; `PKGEXT=.pkg.tar` in front of `makepkg` skips a slow compression. Then install it yourself:
+The package is about 4.4 GiB with green screen and background blur for one architecture, and about 4.7 GiB with all eight features and `sm_120` models (the tree is 5,054,183,158 bytes, 4.71 GiB; the five features outside the default add 326,922,413 bytes, about 312 MiB, to the download); `PKGEXT=.pkg.tar` in front of `makepkg` skips a slow compression. Then install it yourself:
 
 ```sh
 sudo pacman -U maxine-vfx-sdk-local-*-x86_64.pkg.tar*
 ```
 
-Disk space: the SDK tree is about 4.4 GiB. The build copies it into `src/` and `pkg/` and writes the package file; on btrfs (or another filesystem with reflinks) the copies share their data, otherwise plan for about three times the tree's size, plus the installed tree. `makepkg -c` removes `src/` and `pkg/` after the build.
+Disk space: the SDK tree is about 4.4 GiB (4.71 GiB with all eight features). The build copies it into `src/` and `pkg/` and writes the package file; on btrfs (or another filesystem with reflinks) the copies share their data, otherwise plan for about three times the tree's size, plus the installed tree. `makepkg -c` removes `src/` and `pkg/` after the build.
 
 To check the installation, build and run the probe in [../tools/maxine-probe/](../tools/maxine-probe/README.md) (it uses the GPU).
 
