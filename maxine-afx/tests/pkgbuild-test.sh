@@ -154,8 +154,8 @@ listing=$(bsdtar -tf "$pkg")
 has() { grep -qxF -- "$1" <<<"$listing"; }
 want="MAXINE_AFX_ROOT=$R
 MAXINE_AFX_FEATURES_DIR=$R/features
-MAXINE_AFX_LIBRARY_PATH=$R/nvafx/lib:$R/features/denoiser/lib:$R/features/studio_voice/lib:$R/external/cuda/lib
-LD_LIBRARY_PATH=$R/nvafx/lib:$R/features/denoiser/lib:$R/features/studio_voice/lib:$R/external/cuda/lib
+MAXINE_AFX_LIBRARY_PATH=$R/nvafx/lib:$R/features/denoiser/lib:$R/features/studio_voice/lib:$R/features/speaker_focus/lib:$R/features/superres/lib:$R/external/cuda/lib
+LD_LIBRARY_PATH=$R/nvafx/lib:$R/features/denoiser/lib:$R/features/studio_voice/lib:$R/features/speaker_focus/lib:$R/features/superres/lib:$R/external/cuda/lib
 MAXINE_AFX_OS_RELEASE_SHIM=/usr/lib/maxine-afx/os-release-shim.so
 MAXINE_OS_RELEASE=/usr/lib/maxine-afx/fake-os-release
 MAXINE_AFX_FEATURES=denoiser,studio_voice
@@ -167,6 +167,8 @@ if [[ $got == "$want" ]]; then
 else
     fail "the environment file differs:"$'\n'"$got"$'\n'"want:"$'\n'"$want"
 fi
+check "the optional feature directories are listed once each" \
+    test "$(grep -o -e features/speaker_focus/lib -e features/superres/lib <<<"$(grep '^LD_LIBRARY_PATH=' <<<"$got")" | sort | uniq -d | wc -l)" = 0
 check "the environment file does not set LD_PRELOAD" not grep -q '^LD_PRELOAD=' <<<"$got"
 check "nothing under /etc" test -z "$(grep -E '^etc(/|$)' <<<"$listing" || true)"
 check "the shim is packaged" has usr/lib/maxine-afx/os-release-shim.so
@@ -205,7 +207,7 @@ check "the selected sm_86 model is packaged" has "$r/features/dereverb/models/sm
 check "the sm_120 model is pruned" not has "$r/features/dereverb/models/sm_120/dereverb_16k_10752.trtpkg"
 check "the feature left out is not packaged" test -z "$(grep -F "$r/features/denoiser" <<<"$listing" || true)"
 check "the environment file lists the packaged feature only" \
-    grep -qx "LD_LIBRARY_PATH=$R/nvafx/lib:$R/features/dereverb/lib:$R/external/cuda/lib" <<<"$(env_file)"
+    grep -qx "LD_LIBRARY_PATH=$R/nvafx/lib:$R/features/dereverb/lib:$R/features/speaker_focus/lib:$R/features/superres/lib:$R/external/cuda/lib" <<<"$(env_file)"
 check "the environment file lists sm_86 and 16k" \
     test "$(env_file | grep -E '^MAXINE_AFX_(ARCHS|RATES)=')" = $'MAXINE_AFX_ARCHS=sm_86\nMAXINE_AFX_RATES=16k'
 

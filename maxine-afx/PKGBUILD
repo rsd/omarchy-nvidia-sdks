@@ -53,7 +53,7 @@
 
 pkgname=maxine-afx-sdk-local
 pkgver=3.0.0.12
-pkgrel=1
+pkgrel=2
 pkgdesc="NVIDIA Maxine Audio Effects SDK, packaged from the user's own download (personal use, not redistributable)"
 arch=('x86_64')
 url='https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/resources/maxine_linux_audio_effects_sdk'
@@ -151,6 +151,13 @@ package() {
       { echo "feature $f was not assembled" >&2; return 1; }
     libpath+=":$_root/features/$f/lib"
   done
+  # Optional features NVIDIA distributes separately; the user may add them
+  # under the same root later, so their directories are listed even when they
+  # are not packaged (a missing directory on LD_LIBRARY_PATH is harmless).
+  local reqpath="$libpath:$_root/external/cuda/lib" opt
+  for opt in speaker_focus superres; do
+    [[ ,$features, == *",$opt,"* ]] || libpath+=":$_root/features/$opt/lib"
+  done
   libpath+=":$_root/external/cuda/lib"
   local envfile="$pkgdir/usr/share/maxine-afx/maxine-afx.env"
   install -d "${envfile%/*}"
@@ -167,6 +174,8 @@ package() {
 # effect's model_path. MAXINE_AFX_FEATURES, MAXINE_AFX_ARCHS and
 # MAXINE_AFX_RATES are informational: the features, GPU architectures and
 # sample rates this package was built with.
+# features/speaker_focus/lib and features/superres/lib are on the library
+# path although they are optional features that may be absent.
 MAXINE_AFX_ROOT=$_root
 MAXINE_AFX_FEATURES_DIR=$_root/features
 MAXINE_AFX_LIBRARY_PATH=$libpath
@@ -196,7 +205,7 @@ EOF
   fi
   while IFS= read -r -d : dir; do
     [[ -d $pkgdir$dir ]] || { echo "maxine-afx.env: $dir is not in the package" >&2; return 1; }
-  done <<<"$libpath:"
+  done <<<"$reqpath:"
   [[ -d $pkgdir$_root/features ]] ||
     { echo "maxine-afx.env: $_root/features is not in the package" >&2; return 1; }
 

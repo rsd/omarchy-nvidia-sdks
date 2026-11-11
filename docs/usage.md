@@ -287,7 +287,7 @@ The package also provides `maxine-afx-sdk=3.0.0.12`. Declare it as an optional d
 ```
 MAXINE_AFX_ROOT=/opt/nvidia/maxine/afx
 MAXINE_AFX_FEATURES_DIR=/opt/nvidia/maxine/afx/features
-MAXINE_AFX_LIBRARY_PATH=/opt/nvidia/maxine/afx/nvafx/lib:/opt/nvidia/maxine/afx/features/denoiser/lib:/opt/nvidia/maxine/afx/features/studio_voice/lib:/opt/nvidia/maxine/afx/external/cuda/lib
+MAXINE_AFX_LIBRARY_PATH=/opt/nvidia/maxine/afx/nvafx/lib:/opt/nvidia/maxine/afx/features/denoiser/lib:/opt/nvidia/maxine/afx/features/studio_voice/lib:/opt/nvidia/maxine/afx/features/speaker_focus/lib:/opt/nvidia/maxine/afx/features/superres/lib:/opt/nvidia/maxine/afx/external/cuda/lib
 LD_LIBRARY_PATH=<same value as MAXINE_AFX_LIBRARY_PATH>
 MAXINE_AFX_OS_RELEASE_SHIM=/usr/lib/maxine-afx/os-release-shim.so
 MAXINE_OS_RELEASE=/usr/lib/maxine-afx/fake-os-release
@@ -296,7 +296,7 @@ MAXINE_AFX_ARCHS=sm_120
 MAXINE_AFX_RATES=48k
 ```
 
-`MAXINE_AFX_FEATURES`, `MAXINE_AFX_ARCHS` and `MAXINE_AFX_RATES` are informational: comma-separated lists of what was packaged. The library path is `nvafx/lib`, one `features/<feature>/lib` per packaged feature (sorted by name), then `external/cuda/lib`; there is no separate TensorRT directory, it is in `external/cuda/lib`. The path is needed because the feature libraries are loaded by `libnv_audiofx.so`, and their own search path does not reach `external/cuda/lib`. The file never sets `LD_PRELOAD`.
+`MAXINE_AFX_FEATURES`, `MAXINE_AFX_ARCHS` and `MAXINE_AFX_RATES` are informational: comma-separated lists of what was packaged. The library path is `nvafx/lib`, one `features/<feature>/lib` per packaged feature (sorted by name), then `features/speaker_focus/lib` and `features/superres/lib` (optional features NVIDIA distributes separately; listed even when not packaged, so adding them under the same root later needs no change, and a missing directory on the path is harmless; not repeated when packaged), then `external/cuda/lib`; there is no separate TensorRT directory, it is in `external/cuda/lib`. The path is needed because the feature libraries are loaded by `libnv_audiofx.so`, and their own search path does not reach `external/cuda/lib`. The file never sets `LD_PRELOAD`.
 
 Load it for one program only, in the same two ways as the other packages (`EnvironmentFile=/usr/share/maxine-afx/maxine-afx.env`, or `set -a; . /usr/share/maxine-afx/maxine-afx.env; set +a`), and never from a login profile.
 

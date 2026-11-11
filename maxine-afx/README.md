@@ -27,7 +27,7 @@ The SDK does not search for models: an application passes the model's path to th
 |---|---|
 | `MAXINE_AFX_ROOT` | `/opt/nvidia/maxine/afx` |
 | `MAXINE_AFX_FEATURES_DIR` | `/opt/nvidia/maxine/afx/features`; a model is `$MAXINE_AFX_FEATURES_DIR/<feature>/models/sm_<N>/<model>.trtpkg` |
-| `MAXINE_AFX_LIBRARY_PATH`, `LD_LIBRARY_PATH` | `nvafx/lib`, one `features/<feature>/lib` per packaged feature (sorted by name), `external/cuda/lib` |
+| `MAXINE_AFX_LIBRARY_PATH`, `LD_LIBRARY_PATH` | `nvafx/lib`, one `features/<feature>/lib` per packaged feature (sorted by name), then the optional `features/speaker_focus/lib` and `features/superres/lib` (even if absent, unless already packaged), `external/cuda/lib` |
 | `MAXINE_AFX_OS_RELEASE_SHIM` | `/usr/lib/maxine-afx/os-release-shim.so`, to put in `LD_PRELOAD` of the final program |
 | `MAXINE_OS_RELEASE` | `/usr/lib/maxine-afx/fake-os-release`, read by the shim |
 | `MAXINE_AFX_FEATURES`, `MAXINE_AFX_ARCHS`, `MAXINE_AFX_RATES` | informational: what went in, comma-separated, e.g. `denoiser,studio_voice`, `sm_120`, `48k` |
