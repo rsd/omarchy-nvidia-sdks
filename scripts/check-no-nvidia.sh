@@ -20,16 +20,19 @@
 # Every added, modified or type-changed entry is checked (a rename counts as
 # an addition; only deletions are skipped). An entry fails when:
 #   - its path matches an NVIDIA or binary pattern (libraries, models,
-#     archives, PDFs, SDK headers, a VideoFX/ or .ngc/ component, an NGC
-#     download directory such as nvvfxgreenscreen_v1.3.0.0_lib_linux/);
+#     archives, PDFs, SDK headers, a VideoFX/, ARSDK/, Audio_Effects_SDK/
+#     or .ngc/ component, an NGC download directory such as
+#     nvvfxgreenscreen_v1.3.0.0_lib_linux/ or afx_denoiser_v3.0.0-lib/, an
+#     SDK's top-level name directly under a recipe directory such as
+#     maxine-afx/features/ or maxine-ar/Changelog.txt);
 #   - it is a submodule (gitlink), or, in --all, a nested repository;
 #   - it is a symbolic link whose target is absolute or leaves the repository;
 #   - its content is larger than 1 MiB, starts with a binary or archive magic
 #     number (ELF, gzip, zip, PDF, xz, zstd, bzip2, ar, POSIX tar), has a NUL
 #     byte in its first 8 KiB, or carries a marker of an NVIDIA file: an
 #     NVIDIA copyright line, the licence agreement's title on a line of its
-#     own, or the first lines of the SDK's README, Changelog or
-#     install_feature.sh.
+#     own, or the first lines of an SDK's README, Changelog,
+#     install_feature.sh or download_features.sh.
 # Staged and committed content is read from the object database with git
 # cat-file (read-only), so what is checked is what would be committed or
 # pushed. Exit status: 0 clean, 1 offending files, 2 usage or git error.
@@ -73,12 +76,31 @@ path_reason() {
         */build/* | */target/*) echo "build output"; return ;;
     esac
     case $path in
-        maxine-vfx/src/* | maxine-vfx/pkg/*) echo "makepkg work directory"; return ;;
+        maxine-vfx/src/* | maxine-vfx/pkg/* | maxine-ar/src/* | maxine-ar/pkg/* | \
+            maxine-afx/src/* | maxine-afx/pkg/*)
+            echo "makepkg work directory"; return ;;
+    esac
+
+    # An SDK unpacked straight into a recipe directory (MAXINE_*_SRC
+    # defaults to it, and a tree there needs no VideoFX/, ARSDK/ or
+    # Audio_Effects_SDK/ component): the SDKs' top-level names. The recipe's
+    # own files (PKGBUILD, *.sh, README.md, tests/) are none of them; an
+    # SDK's README.md is caught by its content.
+    case $path in
+        maxine-vfx/* | maxine-ar/* | maxine-afx/*)
+            rest=${path#*/}
+            case $rest in
+                lib/* | include/* | features/* | external/* | share/* | samples/* | \
+                    licenses/* | nvafx/* | bin/* | docs/* | version.h | Changelog.txt)
+                    echo "SDK tree in the recipe directory (${path%%/*}/${rest%%/*})"; return ;;
+            esac
+            ;;
     esac
 
     # NVIDIA SDK file names.
     case $base in
-        nvVideoEffects.h | nvCVImage.h | nvCVStatus.h | nvVFX*.h | nvAudioEffects.h | videofx_version.h)
+        nvVideoEffects.h | nvCVImage.h | nvCVStatus.h | nvVFX*.h | nvAudioEffects.h | videofx_version.h | \
+            nvAR.h | nvAR_defs.h)
             echo "NVIDIA SDK header"; return ;;
         VFXSDK_*) echo "NVIDIA SDK archive"; return ;;
     esac
@@ -89,6 +111,7 @@ path_reason() {
         *.pkg.tar*) echo "built package"; return ;;
         *.so | *.so.* | *.a) echo "library"; return ;;
         *.trtpkg | *.engine) echo "TensorRT model"; return ;;
+        *.trtpkg.*) echo "TensorRT model sidecar"; return ;;
         *.tgz | *.tar | *.tar.* | *.zip | *.whl) echo "archive"; return ;;
         *.pdf) echo "PDF document"; return ;;
         *.log) echo "log file"; return ;;
@@ -100,17 +123,23 @@ path_reason() {
     esac
     case /$path/ in
         */VideoFX/*) echo "SDK tree (VideoFX/)"; return ;;
+        */ARSDK/*) echo "SDK tree (ARSDK/)"; return ;;
+        */Audio_Effects_SDK/*) echo "SDK tree (Audio_Effects_SDK/)"; return ;;
         */.ngc/*) echo "NGC configuration"; return ;;
     esac
 
     # NGC download directories: a directory component (not the file name)
-    # shaped <name>_v<digit>..., e.g. nvvfxgreenscreen_v1.3.0.0_lib_linux.
+    # shaped <name>_v<digit>..., e.g. nvvfxgreenscreen_v1.3.0.0_lib_linux,
+    # ar_sdk_core_v1.2.0.0_linux, afx_denoiser_v3.0.0-lib. The afx_ shape
+    # needs its underscore, so the recipe directory maxine-afx/ never matches.
     rest=''
     [[ $path != */* ]] || rest=${path%/*}
     while [[ -n $rest ]]; do
         component=${rest%%/*}
         case $component in
-            vfx_sdk_core_v[0-9]* | nvvfx*_v[0-9]* | nvafx*_v[0-9]*)
+            vfx_sdk_core_v[0-9]* | nvvfx*_v[0-9]* | nvafx*_v[0-9]* | \
+                ar_sdk_core_v[0-9]* | nvar*_v[0-9]* | \
+                maxine_linux_audio_effects_sdk_v[0-9]* | afx_*_v[0-9]*)
                 echo "NGC download directory"; return ;;
         esac
         if [[ $rest == */* ]]; then rest=${rest#*/}; else rest=''; fi
@@ -150,16 +179,22 @@ hex() { od -An -v -tx1 | tr -d ' \n'; }
 # Text that marks an NVIDIA file under any name (extended regular
 # expressions, matched case-insensitively): copyright lines of SDK headers,
 # sources and licence files, the licence agreement's title on a line of its
-# own (prose that names the agreement is fine), the first lines of the SDK's
-# README.md, Changelog.txt and features/install_feature.sh. The bracketed
-# spaces keep this script from matching its own patterns.
+# own (prose that names the agreement is fine), the first lines of the SDKs'
+# README.md (VFX, AR, Audio Effects), Changelog.txt, the VFX and AR
+# features/install_feature.sh and the Audio Effects
+# features/download_features.sh. The bracketed spaces keep this script from
+# matching its own patterns.
 markers=(
     -e 'copyright.*nvidia[ ]corporation'
     -e 'nvidia[ ]corporation.*all[ ]rights[ ]reserved'
     -e '^[[:space:]]*nvidia[ ]software[ ]license[ ]agreement[[:space:]]*$'
     -e '^nvidia[ ]video[ ]effects[ ]sdk[[:space:]]*$'
+    -e '^nvidia[ ]augmented[ ]reality[ ]sdk[[:space:]]*$'
+    -e '^nvidia[ ]audioeffects[ ]sdk[[:space:]]*$'
     -e '^changelog[ ][(]v[0-9]+[.][0-9]'
     -e 'feature[ ]installation[ ]script[ ]for[ ]vfx[ ]sdk'
+    -e 'feature[ ]installation[ ]script[ ]for[ ]arsdk'
+    -e '^#[ ]set[ ]ngc[ ]org/team[ ]below[ ]if[ ]needed'
 )
 
 # Prints the reason when the content of <file> (a regular file of <size>

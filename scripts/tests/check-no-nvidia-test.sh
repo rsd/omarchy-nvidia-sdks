@@ -156,6 +156,56 @@ stage_case fail "a .ngc under a directory with a newline fails" $'a\nb/.ngc/conf
 stage_case fail "a VideoFX under a directory with a newline fails" $'a\nb/VideoFX/lib/x' printf 'x\n'
 stage_case pass "a clean path with a newline passes" $'a\nb/notes.md' printf 'text\n'
 
+echo "== paths: AR and Audio Effects SDKs"
+for pkg in maxine-ar maxine-afx; do
+    stage_case fail "$pkg/src/ (makepkg work directory) fails" "$pkg/src/notes.txt" printf 'x\n'
+    stage_case fail "$pkg/pkg/ (makepkg work directory) fails" "$pkg/pkg/usr/share/x.txt" printf 'x\n'
+    for f in PKGBUILD assemble.sh README.md tests/assemble-test.sh; do
+        stage_case pass "the recipe $pkg/$f passes" "$pkg/$f" printf '# recipe\n'
+    done
+done
+echo "== paths: an SDK unpacked straight into a recipe directory"
+# The SDKs' top-level names (VideoFX/, ARSDK/, Audio_Effects_SDK/), e.g.
+# maxine-afx/features/README.md, maxine-ar/lib/models/models.json. Text files
+# with clean content, so only the path can refuse them.
+for pkg in maxine-vfx maxine-ar maxine-afx; do
+    for f in features/README.md samples/README.md samples/download_samples.sh \
+        external/ThirdPartyLicenses.txt lib/models/models.json lib/models/add_custom_models.sh \
+        include/notes.txt share/build_triton_client_lib.sh licenses/terms.txt nvafx/include/x.txt \
+        bin/run.sh docs/index.html version.h Changelog.txt; do
+        stage_case fail "an SDK file $pkg/$f fails" "$pkg/$f" printf 'plain text\n'
+    done
+    for f in PKGBUILD README.md assemble.sh configure.sh download.sh selection.sh \
+        tests/assemble-test.sh tests/pkgbuild-test.sh; do
+        stage_case pass "the recipe file $pkg/$f passes" "$pkg/$f" printf '# recipe\n'
+    done
+    stage_case fail "an SDK README.md as $pkg/README.md fails by its content" "$pkg/README.md" \
+        printf 'NVIDIA %s\n====\n' "$(case $pkg in maxine-vfx) echo 'Video Effects SDK' ;;
+            maxine-ar) echo 'Augmented Reality SDK' ;; *) echo 'AudioEffects SDK' ;; esac)"
+done
+stage_case pass "a top-level name elsewhere is not an SDK tree" docs/features/README.md printf '# notes\n'
+stage_case pass "a top-level name under a recipe's tests/ is not an SDK tree" \
+    maxine-afx/tests/lib/helper.sh printf '# recipe\n'
+stage_case pass "a recipe file named like an SDK directory is not one" maxine-ar/libraries.md printf '# notes\n'
+
+stage_case fail "a path under ARSDK/ fails" ARSDK/features/README.md printf 'text\n'
+stage_case fail "a nested path under Audio_Effects_SDK/ fails" maxine-afx/Audio_Effects_SDK/version.txt printf 'text\n'
+stage_case fail "an AR SDK header fails" include/nvAR.h printf '/* fake */\n'
+stage_case fail "an AR SDK definitions header fails" include/nvAR_defs.h printf '/* fake */\n'
+stage_case fail "a TensorRT model's .md5 sidecar fails" models/denoiser_48k.trtpkg.md5 printf '0123  x\n'
+stage_case fail "the AR core download directory fails" dl/ar_sdk_core_v1.2.0.0_linux/readme printf 'x\n'
+stage_case fail "an AR feature download directory fails" nvarfaceboxdetection_v1.2.0.0_lib_linux/readme printf 'x\n'
+stage_case fail "the Audio Effects core download directory fails" \
+    maxine_linux_audio_effects_sdk_v3.0.0/readme printf 'x\n'
+stage_case fail "an Audio Effects library download directory fails" afx_denoiser_v3.0.0-lib/readme printf 'x\n'
+stage_case fail "an Audio Effects model download directory fails" \
+    dl/afx_studio_voice_v3.0.0-48k-sm120/readme printf 'x\n'
+stage_case pass "maxine-afx/ is not an NGC directory" maxine-afx/tests/download-test.sh printf '# recipe\n'
+stage_case pass "afx without _v<digit> is not an NGC directory" afx_notes/vendor.md printf '# notes\n'
+stage_case pass "nvar without _v<digit> is not an NGC directory" nvarchive/notes.md printf '# notes\n'
+stage_case pass "a file named like an AR download directory is not one" \
+    docs/ar_sdk_core_v1.2.0.0_linux.md printf '# notes\n'
+
 echo "== content"
 stage_case fail "ELF magic under an innocent name fails" tool.txt elf
 stage_case fail "gzip data named notes.txt fails" notes.txt sh -c 'printf "hello\n" | gzip -c'
@@ -177,6 +227,16 @@ stage_case fail "the SDK Changelog's first line fails" notes.txt \
     printf '%s (v1.3.0.0)\n----\n- new\n' Changelog
 stage_case fail "install_feature.sh's header fails" fetch.sh \
     printf '#!/bin/bash\n# Feature %s for VFX SDK\n' 'Installation Script'
+stage_case fail "the AR SDK's install_feature.sh header fails" fetch.sh \
+    printf '#!/bin/bash\n\n# Feature %s for ARSDK\n' 'Installation Script'
+stage_case fail "the Audio Effects SDK's download_features.sh header fails" fetch.sh \
+    printf '#!/bin/bash\n\n# Set NGC %s if needed\n' 'org/team below'
+stage_case fail "the AR SDK README's title fails" notes.md \
+    printf 'NVIDIA %s\n====\n' 'Augmented Reality SDK'
+stage_case fail "the Audio Effects SDK README's title fails" notes.md \
+    printf 'See the guide.\n\nNVIDIA %s\n====\n' 'AudioEffects SDK'
+stage_case pass "prose naming the AR SDK passes" docs/ar.md \
+    printf 'The NVIDIA %s is packaged by maxine-ar.\n' 'Augmented Reality SDK'
 
 repo=$(new_repo)
 head -c 1048576 /dev/zero | tr '\0' 'a' >"$repo/exact.txt"

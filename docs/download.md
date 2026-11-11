@@ -1,6 +1,6 @@
-# Downloading the Maxine Video Effects SDK
+# Downloading the Maxine SDKs
 
-The `maxine-vfx-sdk-local` package is built from files you download yourself from NVIDIA NGC after accepting NVIDIA's licence. This repository does not contain, and cannot provide, any of those files. This page is a step-by-step guide for SDK 1.3.0.0 (Linux).
+The `maxine-vfx-sdk-local`, `maxine-ar-sdk-local` and `maxine-afx-sdk-local` packages are built from files you download yourself from NVIDIA NGC after accepting NVIDIA's licence. This repository does not contain, and cannot provide, any of those files. This page is a step-by-step guide for the Video Effects SDK 1.3.0.0 (Linux). The [Maxine AR SDK](#maxine-ar-sdk) 1.2.0.0 and the [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) 3.0.0 have their own sections further down; they use the same prerequisites and the same NGC CLI. Until those sections, the commands and names on this page are the Video Effects ones (`maxine-vfx/download.sh`).
 
 There are two ways to download:
 
@@ -254,7 +254,7 @@ SDK 1.3.0.0 for Linux offers eight features on NGC. The `broadcast` preset is th
 Notes:
 
 - Model packages exist only for green screen, denoising and relighting. The other five features are a library only.
-- **Eye Contact and Auto Frame** in NVIDIA Broadcast belong to the Maxine AR SDK, not to this Video Effects SDK. They are not downloaded or packaged here.
+- **Eye Contact and Auto Frame** in NVIDIA Broadcast belong to the Maxine AR SDK, not to this Video Effects SDK. They are not part of this download. The AR SDK has its own download and package: see [Maxine AR SDK](#maxine-ar-sdk).
 - Artifact reduction (`nvvfxartifactreduction`) is not on NGC for 1.3.0.0; the 1.1.0.0 Changelog says it was removed. Two more names, `nvvfxvfg` and `nvvfxframegeneration`, are not available either. NGC answers 403 for them.
 - Some features ship a `<Name>_dependencies.txt`. If one names other features that are not in your download, the build prints a warning listing them. Download those features as well.
 
@@ -304,7 +304,194 @@ cd maxine-vfx && MAXINE_VFX_SRC=~/.local/opt/maxine/VideoFX makepkg -f
 
 The tree must contain `lib/libVideoFX.so`, `share/videofx_version.h` and `features/<feature>/lib/*.so`, and normally `lib/models/*.trtpkg`.
 
+## Maxine AR SDK
+
+The AR SDK 1.2.0.0 holds Eye Contact (gaze redirection), face detection and landmarks, face expressions and further AR features. It is a separate NGC download and a separate package, `maxine-ar-sdk-local`. The prerequisites above apply unchanged (account, API key, NGC CLI, `ngc config set`, disk space for the tree). If an AR item answers `403`, check your access as described in [Troubleshooting](#troubleshooting).
+
+### AR SDK: download with one command
+
+From the root of this repository:
+
+```bash
+maxine-ar/download.sh                     # preset broadcast, for your GPU
+maxine-ar/download.sh --dry-run           # the table and the commands, nothing downloaded
+maxine-ar/download.sh --preset all --yes  # the seven documented features, no question
+maxine-ar/download.sh --list              # the documented features, with sizes
+maxine-ar/download.sh --yes --build       # download, then configure.sh --write and makepkg -f
+```
+
+It works like the Video Effects helper (see [Download with one command](#download-with-one-command)): it detects your GPU architecture, asks NGC read-only for the size of every item, prints a table, asks for confirmation, downloads only what is missing into a staging directory `.partial/`, checks each item against the size and file count NGC reported, retries failures and prints the next steps. It never runs NVIDIA's `features/install_feature.sh` (which installs into `/usr/local/ARSDK` with `sudo`), never reads `~/.ngc` and never handles the key.
+
+| Option | Meaning |
+|---|---|
+| `--dest DIR` | Download directory. Default `~/Downloads/maxine/ar-sdk`, a directory of its own, so that one source holds one SDK |
+| `--archs LIST` | `auto` (default, from `nvidia-smi`), `all`, or a list such as `sm_120,sm_89` |
+| `--preset NAME` | `broadcast` (default) or `all` |
+| `--features LIST` | NGC feature names instead of a preset. Do not combine it with `--preset` |
+| `--version V` | SDK version. Default `1.2.0.0` |
+| `--retries N` | Extra attempts for an item that fails. Default 2 |
+| `--yes` | Do not ask. Without a terminal it is required |
+| `--dry-run` | Probe, print the table and the exact `ngc` commands, change nothing |
+| `--build` | After a fully successful download, run `configure.sh --write` and `makepkg -f`. It never installs and never runs `sudo` |
+| `--list` | Show the documented features with sizes and exit |
+
+The SDK core is always fetched. The library of each feature is fetched once, and its models once per architecture.
+
+### AR SDK: features
+
+The list is the one in the SDK's own `features/README.md` and Linux installation guide, which NVIDIA calls non-exhaustive: another name can be given with `--features`, and `download.sh` reports a name that is not on NGC as unavailable. The mapping to NVIDIA Broadcast names is by function; NVIDIA does not document it.
+
+| NGC name | What it does | Closest NVIDIA Broadcast name | Preset |
+|---|---|---|---|
+| `nvargazeredirection` | Eye contact: estimates the gaze and redirects it to the camera | Eye Contact | `broadcast`, `all` |
+| `nvarfaceboxdetection` | Face bounding boxes, with tracking for video | Auto Frame (closest match: it follows the face) | `broadcast`, `all` |
+| `nvarlandmarkdetection` | Facial landmarks (68 or 126 points) and head pose | none (used by Eye Contact) | `broadcast`, `all` |
+| `nvarfaceexpressions` | Face expression coefficients and head pose | none | `all` |
+| `nvarbodydetection` | Body (person) bounding boxes | none | `all` |
+| `nvarbodyposeestimation` | Body pose: keypoints and joint angles | none | `all` |
+| `nvarlipsync` | Lip synchronisation: re-animates the mouth to match audio | none | `all` |
+
+The `broadcast` preset is eye contact plus the two features its `nvARGazeRedirection_dependencies.txt` names, face box detection and landmark detection. A feature lists the features it needs in its `<Name>_dependencies.txt`, and the build prints a warning when one of them is missing or not selected.
+
+Face expressions, body detection, body pose and lip synchronisation are optional extra downloads: fetch them with `--preset all` or `--features`, or with the manual commands below, into the same directory, then run `maxine-ar/configure.sh` again and rebuild. Whether a package holds them depends on what is in your download. In 1.2.0.0 Linux every AR feature has model packages; for the architectures see [gpu-support.md](gpu-support.md#ar-and-audio-effects-sdks).
+
+### AR SDK: download by hand
+
+The same downloads, written out, for an RTX 50 series GPU (`sm_120`). The SDK core is an NGC resource and its tag ends in `_linux`:
+
+```bash
+ngc registry resource download-version nvidia/maxine/ar_sdk_core:1.2.0.0_linux --dest ~/Downloads/maxine/ar-sdk
+
+# Eye contact: library and models
+ngc registry model download-version nvidia/maxine/nvargazeredirection:1.2.0.0_lib_linux --dest ~/Downloads/maxine/ar-sdk
+ngc registry model download-version nvidia/maxine/nvargazeredirection:1.2.0.0_models_linux_sm120 --dest ~/Downloads/maxine/ar-sdk
+
+# The two features eye contact needs, library and models each
+ngc registry model download-version nvidia/maxine/nvarfaceboxdetection:1.2.0.0_lib_linux --dest ~/Downloads/maxine/ar-sdk
+ngc registry model download-version nvidia/maxine/nvarfaceboxdetection:1.2.0.0_models_linux_sm120 --dest ~/Downloads/maxine/ar-sdk
+ngc registry model download-version nvidia/maxine/nvarlandmarkdetection:1.2.0.0_lib_linux --dest ~/Downloads/maxine/ar-sdk
+ngc registry model download-version nvidia/maxine/nvarlandmarkdetection:1.2.0.0_models_linux_sm120 --dest ~/Downloads/maxine/ar-sdk
+```
+
+For another GPU, replace `sm120` with your architecture ([gpu-support.md](gpu-support.md#ar-and-audio-effects-sdks)). For any other feature in the [AR features](#ar-sdk-features) table, use the same two tags with its NGC name. A feature's major and minor version must equal the SDK's (1.2). To check what a package holds before downloading it, ask NGC (read-only):
+
+```bash
+ngc registry model info nvidia/maxine/nvargazeredirection:1.2.0.0_models_linux_sm120
+```
+
+The result in `~/Downloads/maxine/ar-sdk/`, which is the layout `maxine-ar/assemble.sh` reads and which `download.sh` produces too:
+
+```
+ar_sdk_core_v1.2.0.0_linux/                       ARSDK_linux_1.2.0.0.tgz and ARSDK_triton_1.2.0.0.tgz
+nvargazeredirection_v1.2.0.0_lib_linux/           1 file, a .tar.gz
+nvargazeredirection_v1.2.0.0_models_linux_sm120/  model files
+(the same two directories for each further feature)
+```
+
+The package needs only `ARSDK_linux_1.2.0.0.tgz` from the core; the Triton client is not packaged.
+
+### AR SDK: sizes
+
+The model packages for `sm_120` are 92.5 MiB for eye contact, 48.0 MiB for landmark detection, 28.7 MiB for face box detection and 1.6 MiB for face expressions. `download.sh --list` prints the size of the core and of every library, and the build summary prints the model size per architecture. With four features (eye contact, face box detection, landmark detection and face expressions) and `sm_120` models the SDK tree is 4,757,681,936 bytes (4.43 GiB), of which 175 MiB are models; most of the rest is the bundled CUDA and TensorRT libraries, which every selection carries. The built package (`PKGEXT=.pkg.tar`) is 4,758,773,760 bytes.
+
+### AR SDK: next step
+
+```bash
+maxine-ar/configure.sh --src ~/Downloads/maxine/ar-sdk                                  # present, offered, current selection
+maxine-ar/configure.sh --src ~/Downloads/maxine/ar-sdk --archs sm_120 --features all --write
+cd maxine-ar && makepkg -f
+sudo pacman -U maxine-ar-sdk-local-*.pkg.tar*
+```
+
+`configure.sh` reads the directory without network access and writes the git-ignored `maxine-ar/selection.conf`. The build inputs, the source layouts and the other options are in [maxine-ar/README.md](../maxine-ar/README.md). Then continue with [usage.md](usage.md#maxine-ar-sdk).
+
+## Maxine Audio Effects SDK
+
+The Audio Effects (AFX) SDK 3.0.0 offers speech effects: noise removal, room echo removal, both together, Studio Voice and audio super resolution. It is a separate NGC download and a separate package, `maxine-afx-sdk-local` (package version 3.0.0.12, the SDK's full version; NGC tags the downloads with the first three parts, `3.0.0`). The prerequisites above apply unchanged. If an item answers `403`, check your access as described in [Troubleshooting](#troubleshooting).
+
+### AFX SDK: download with one command
+
+```bash
+maxine-afx/download.sh                     # preset broadcast, for your GPU
+maxine-afx/download.sh --dry-run           # the table and the commands, nothing downloaded
+maxine-afx/download.sh --preset all --yes  # the ten effects that are not Early Access, no question
+maxine-afx/download.sh --features denoiser-16k,superres-16k_to_48k --archs sm_120
+maxine-afx/download.sh --list              # the known effects, with sizes
+maxine-afx/download.sh --yes --build       # download, then configure.sh --write and makepkg -f
+```
+
+The behaviour is the same as for the other two helpers: detect the GPU architecture, probe sizes read-only, print a table, ask, download only what is missing through `.partial/`, verify against the size and file count NGC reported, retry, print the next steps. It never runs NVIDIA's `features/download_features.sh`, never reads `~/.ngc` and never handles the key. The options are those of the AR helper above, with these differences:
+
+| Option | Meaning |
+|---|---|
+| `--dest DIR` | Download directory. Default `~/Downloads/maxine/afx-sdk` |
+| `--preset NAME` | `broadcast` (default): `denoiser-48k`, `dereverb-48k`, `dereverb_denoiser-48k` and `studio_voice-48k`. `all`: the ten effects that are not Early Access |
+| `--features LIST` | Effects instead of a preset, each named `<feature>-<rate>` as `--list` shows, for example `denoiser-16k`, `superres-16k_to_48k` or `speaker_focus-48k` |
+| `--version V` | The NGC tag of the SDK. Default `3.0.0` |
+
+### AFX SDK: effects
+
+An effect is named as NVIDIA's `download_features.sh` names it, `<feature>-<rate>`. The mapping to NVIDIA Broadcast names is by function; NVIDIA does not document it.
+
+| Feature | What it does | Closest NVIDIA Broadcast name | Rates | Preset |
+|---|---|---|---|---|
+| `denoiser` | Noise removal: background noise in speech | Noise Removal | `16k`, `48k` | `48k` in `broadcast`; both in `all` |
+| `dereverb` | Room echo removal | Room Echo Removal | `16k`, `48k` | `48k` in `broadcast`; both in `all` |
+| `dereverb_denoiser` | Noise and room echo removal in one effect | Noise Removal with Room Echo Removal | `16k`, `48k` | `48k` in `broadcast`; both in `all` |
+| `studio_voice` | Studio Voice: high quality and low latency, with a mic profile | Studio Voice | `16k`, `48k` | `48k` in `broadcast`; both in `all` |
+| `superres` | Audio super resolution: raises the sample rate | none | `8k_to_16k`, `16k_to_48k` | `all` |
+| `speaker_focus` | Keeps the main speaker (Early Access) | none | `16k`, `48k` | only when named in `--features` |
+
+The 16 kHz variants, audio super resolution and speaker focus are optional extra downloads: fetch them with `--preset all` or `--features`, or with the manual commands below, into the same directory, then run `maxine-afx/configure.sh` again and rebuild. The package holds every sample rate present in your download for the features you select; there is no rate setting, so leave a rate out of the download to leave it out of the package.
+
+### AFX SDK: download by hand
+
+The NGC names are those NVIDIA's `features/download_features.sh` uses. For `denoiser` at 48 kHz on an RTX 50 series GPU (`sm_120`):
+
+```bash
+# The SDK core is an NGC resource
+ngc registry resource download-version nvidia/maxine/maxine_linux_audio_effects_sdk:3.0.0 --dest ~/Downloads/maxine/afx-sdk
+
+# A feature's library (once per feature), then its models per sample rate and architecture
+ngc registry model download-version nvidia/maxine/afx_denoiser:3.0.0-lib --dest ~/Downloads/maxine/afx-sdk
+ngc registry model download-version nvidia/maxine/afx_denoiser:3.0.0-48k-sm120 --dest ~/Downloads/maxine/afx-sdk
+```
+
+Repeat the last two commands with `afx_dereverb`, `afx_dereverb_denoiser` and `afx_studio_voice` for the rest of the `broadcast` preset. For another rate, replace `48k` (`16k`, or `8k_to_16k` and `16k_to_48k` for `afx_superres`); for another GPU, replace `sm120` ([gpu-support.md](gpu-support.md#ar-and-audio-effects-sdks)). If a models tag does not exist, that effect has no model package for that rate and architecture. To check an item before downloading it, ask NGC (read-only):
+
+```bash
+ngc registry model info nvidia/maxine/afx_denoiser:3.0.0-48k-sm120
+```
+
+`download.sh --list` and `--dry-run` do the same probing for you and report a name that NGC does not know as unavailable, so use them to check a name before relying on it. The result in `~/Downloads/maxine/afx-sdk/`, the layout `maxine-afx/assemble.sh` reads:
+
+```
+maxine_linux_audio_effects_sdk_v3.0.0/       NVIDIA_AFX_SDK_Linux_3.0.0.12.tar.gz
+afx_denoiser_v3.0.0-lib/                     1 file, a .tar.gz
+afx_denoiser_v3.0.0-48k-sm120/               .trtpkg model files, each with a .md5
+(the same library and models directories for each further feature)
+```
+
+The build checks each model against its `.md5` file and stops on a mismatch, which means a corrupted or interrupted download. Any other `afx_*_v*` directory in the source stops the build.
+
+### AFX SDK: sizes
+
+NGC reports the size of each item, and `download.sh --list` prints it. For the four features at 48 kHz and `sm_120` models, the assembled SDK tree is about 3.8 GiB, of which the models are about 1.5 GiB, and the built package is about 3.75 GiB uncompressed (`PKGEXT=.pkg.tar`). Each further architecture and each further sample rate adds model packages.
+
+### AFX SDK: next step
+
+```bash
+maxine-afx/configure.sh --src ~/Downloads/maxine/afx-sdk                                 # present, offered, current selection
+maxine-afx/configure.sh --src ~/Downloads/maxine/afx-sdk --archs sm_120 --features all --write
+cd maxine-afx && PKGEXT=.pkg.tar makepkg -f
+sudo pacman -U maxine-afx-sdk-local-*.pkg.tar*
+```
+
+`configure.sh` reads the directory without network access and writes the git-ignored `maxine-afx/selection.conf`. The build inputs, the source layouts and the other options are in [maxine-afx/README.md](../maxine-afx/README.md). Then continue with [usage.md](usage.md#maxine-audio-effects-sdk).
+
 ## Troubleshooting
+
+The entries below use the Video Effects names. The same causes and fixes apply to `maxine-ar/download.sh` and `maxine-afx/download.sh`: the helpers report the same table statuses, `403` and "could not be found" mean the same thing, an interrupted run is repeated with the same command, and `--list` shows the names they know.
 
 ### `ngc registry model list "nvidia/maxine/nvvfx*"` prints an empty table
 

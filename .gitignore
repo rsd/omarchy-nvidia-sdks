@@ -7,13 +7,18 @@ build/
 target/
 maxine-vfx/src/
 maxine-vfx/pkg/
+maxine-ar/src/
+maxine-ar/pkg/
+maxine-afx/src/
+maxine-afx/pkg/
 *.pkg.tar*
 
-# Libraries and TensorRT models.
+# Libraries, TensorRT models and their checksum sidecars (*.trtpkg.md5).
 *.so
 *.so.*
 *.a
 *.trtpkg
+*.trtpkg.*
 *.engine
 
 # Archives and documents as NVIDIA ships them (SDK tarballs, licence PDFs).
@@ -27,16 +32,66 @@ maxine-vfx/pkg/
 *.whl
 
 # SDK trees and NGC download directories, e.g. when the user's download sits
-# next to the PKGBUILD (MAXINE_VFX_SRC defaults to maxine-vfx/).
+# next to the PKGBUILD (MAXINE_VFX_SRC defaults to maxine-vfx/; the AR and
+# Audio Effects packages do the same with maxine-ar/ and maxine-afx/).
 VideoFX/
+ARSDK/
+Audio_Effects_SDK/
 vfx_sdk_core_v*/
 nvvfx*_v*/
+ar_sdk_core_v*/
+nvar*_v*/
+maxine_linux_audio_effects_sdk_v*/
+afx_*_v*/
 nvafx*_v*/
+# An SDK tree unpacked straight into a recipe directory: the SDKs' top-level
+# names (the recipe's own README.md stays visible; the guard knows an SDK's
+# README by its content).
+/maxine-vfx/lib/
+/maxine-vfx/include/
+/maxine-vfx/features/
+/maxine-vfx/external/
+/maxine-vfx/share/
+/maxine-vfx/samples/
+/maxine-vfx/licenses/
+/maxine-vfx/nvafx/
+/maxine-vfx/bin/
+/maxine-vfx/docs/
+/maxine-vfx/version.h
+/maxine-vfx/Changelog.txt
+/maxine-ar/lib/
+/maxine-ar/include/
+/maxine-ar/features/
+/maxine-ar/external/
+/maxine-ar/share/
+/maxine-ar/samples/
+/maxine-ar/licenses/
+/maxine-ar/nvafx/
+/maxine-ar/bin/
+/maxine-ar/docs/
+/maxine-ar/version.h
+/maxine-ar/Changelog.txt
+/maxine-afx/lib/
+/maxine-afx/include/
+/maxine-afx/features/
+/maxine-afx/external/
+/maxine-afx/share/
+/maxine-afx/samples/
+/maxine-afx/licenses/
+/maxine-afx/nvafx/
+/maxine-afx/bin/
+/maxine-afx/docs/
+/maxine-afx/version.h
+/maxine-afx/Changelog.txt
 
-# The local build selection written by maxine-vfx/configure.sh: it holds a
-# path on this machine.
+# The local build selection written by each package's configure.sh: it
+# holds a path on this machine.
 maxine-vfx/selection.conf
 maxine-vfx/.selection.conf.*
+maxine-ar/selection.conf
+maxine-ar/.selection.conf.*
+maxine-afx/selection.conf
+maxine-afx/.selection.conf.*
 
 # NGC CLI configuration (holds the API key) and download logs.
 .ngc/

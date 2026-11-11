@@ -1,6 +1,6 @@
 # GPU support of the Maxine Video Effects SDK
 
-This page says which GPUs the SDK 1.3.0.0 (Linux) supports, how to find the architecture of your GPU, and how to fetch the models for another one. It applies to the `maxine-vfx-sdk-local` package: the package contains the models of the architectures you select, so the architecture decides what you download and what you build.
+This page says which GPUs the SDK 1.3.0.0 (Linux) supports, how to find the architecture of your GPU, and how to fetch the models for another one. It applies to the `maxine-vfx-sdk-local` package: the package contains the models of the architectures you select, so the architecture decides what you download and what you build. What applies to the AR SDK and the Audio Effects SDK is in [AR and Audio Effects SDKs](#ar-and-audio-effects-sdks).
 
 ## Requirements
 
@@ -110,3 +110,29 @@ The NGC resource names it uses, read from the script, are the same ones this rep
 | The core SDK | the resource `nvidia/maxine/vfx_sdk_core:<ver>_linux` |
 
 The equivalent for this package is `maxine-vfx/download.sh`, or the `ngc registry model download-version` commands in [download.md](download.md#download-by-hand), both of which create the layout the build reads.
+
+## AR and Audio Effects SDKs
+
+`maxine-ar-sdk-local` (AR SDK 1.2.0.0) and `maxine-afx-sdk-local` (Audio Effects SDK 3.0.0) work like the Video Effects package: the models of the architectures you select go into the package, so the architecture decides what you download and build. The architecture is the compute capability without the dot, found as in [Find your architecture](#find-your-architecture); the compute capability, example GPUs and `-g` values in the [table above](#architectures-with-models-in-1300-linux) are the same hardware facts, but its NGC tags, directory names and sizes are for Video Effects only.
+
+| | AR SDK 1.2.0.0 | Audio Effects SDK 3.0.0 |
+|---|---|---|
+| GPU | Turing (`sm_75`) or newer | Turing (`sm_75`) or newer |
+| Architectures with models | `sm_75`, `sm_80`, `sm_86`, `sm_89`, `sm_90`, `sm_100`, `sm_120` | `sm_75`, `sm_80`, `sm_86`, `sm_89`, `sm_90`, `sm_100`, `sm_120` |
+| Where the list comes from | The architectures NVIDIA's feature installer fetches 1.2.0.0 Linux models for | The architectures NVIDIA's `download_features.sh` maps a GPU to |
+| Models tag | `nvidia/maxine/<feature>:1.2.0.0_models_linux_sm<N>` | `nvidia/maxine/afx_<feature>:3.0.0-<rate>-sm<N>` |
+| Model directory created by `ngc` | `<feature>_v1.2.0.0_models_linux_sm<N>/` | `afx_<feature>_v3.0.0-<rate>-sm<N>/` |
+| Models | In 1.2.0.0 Linux every feature has them | Each feature has model packages per sample rate and architecture; an item NGC does not have shows as "no model package" |
+| Models per sample rate | not applicable | `16k` and `48k`; `8k_to_16k` and `16k_to_48k` for audio super resolution |
+| Bundled | CUDA 12.8, cuDNN 9.7 and TensorRT 10.9 | CUDA 12.8, cuDNN 9.7 and TensorRT 10.9 |
+| Download helper | `maxine-ar/download.sh --archs ...` | `maxine-afx/download.sh --archs ...` |
+| Select the architectures | `maxine-ar/configure.sh --archs ... --write` | `maxine-afx/configure.sh --archs ... --write` |
+
+Notes:
+
+- **Pascal and older are not supported.** Both helpers stop on an architecture below `sm_75` and say so. An architecture that is not in the list (for example 8.7 or 12.1) has no exact model package: the helpers warn and show "no model package" for it.
+- **Driver.** Both packages depend on `nvidia-utils` for `libcuda.so.1` and bundle their own CUDA, cuDNN and TensorRT. This repository's sources state no separate minimum driver for these two SDKs; the 570.26 above is the figure given for the Video Effects SDK, which bundles the same CUDA version.
+- **The helpers detect the GPU** the same way as `maxine-vfx/download.sh`: `--archs auto` (the default) asks `nvidia-smi` for the compute capability and uses every different architecture it finds. The builds never query the GPU, and `configure.sh --detect-gpu` runs the query only when you ask for it.
+- **Fetching another GPU's models** follows [Fetching models for another GPU](#fetching-models-for-another-gpu), with the helper and the tags of the package you are using, for example `maxine-ar/download.sh --archs sm_89`. The manual commands are in [download.md](download.md#ar-sdk-download-by-hand) and [download.md](download.md#afx-sdk-download-by-hand).
+- **Size per architecture.** For the AR SDK and `sm_120` the models are 92.5 MiB for eye contact, 48.0 MiB for landmark detection, 28.7 MiB for face box detection and 1.6 MiB for face expressions; each further architecture adds the same kind of set. For the Audio Effects SDK each architecture adds the models of every selected feature at every sample rate present. `download.sh --list --archs all` prints the size NGC reports for each item, and the build summary prints the model size per architecture. Package only the architectures of the machines you build for.
+- **If the build stops** with a missing models directory, a selected feature lacks models for a selected architecture (or, for the Audio Effects SDK, for one of its sample rates): the message names the feature, the architecture and the NGC tag to download, or you can leave that architecture out of the selection.

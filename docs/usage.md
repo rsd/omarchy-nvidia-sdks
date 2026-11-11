@@ -1,10 +1,14 @@
-# Using the maxine-vfx-sdk-local package
+# Using the Maxine SDK packages
 
-This page is for programs and projects that load the Maxine Video Effects SDK installed by `maxine-vfx-sdk-local`. For building the package, see [download.md](download.md) and [../maxine-vfx/README.md](../maxine-vfx/README.md). For supported GPUs and architectures, see [gpu-support.md](gpu-support.md).
+This page is for programs and projects that load a Maxine SDK installed by one of three packages: `maxine-vfx-sdk-local` (Video Effects), `maxine-ar-sdk-local` (AR) or `maxine-afx-sdk-local` (Audio Effects). Each package installs this page as `/usr/share/doc/<package>/usage.md`. The sections from "What the package installs" to "Troubleshooting" describe the Video Effects package. The [Maxine AR SDK](#maxine-ar-sdk) and [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) sections describe the other two, which follow the same pattern: an environment file you load for one program, a shim you preload on that program, and no global setting. [Why nothing is global](#why-nothing-is-global) says why.
+
+For building the packages, see [download.md](download.md), [../maxine-vfx/README.md](../maxine-vfx/README.md), [../maxine-ar/README.md](../maxine-ar/README.md) and [../maxine-afx/README.md](../maxine-afx/README.md). For supported GPUs and architectures, see [gpu-support.md](gpu-support.md).
 
 The package contains NVIDIA software and is for your own machine only; see the "Licence and personal use" section of the [README](../README.md). NVIDIA does not support this configuration (Arch, distributions the SDK does not list, client-side use).
 
 ## What the package installs
+
+This and the following sections up to "Troubleshooting" are about `maxine-vfx-sdk-local`.
 
 | Path | Content |
 |---|---|
@@ -182,3 +186,163 @@ NVIDIA's own tarball ships 8 dangling symlinks in `external/cuda`: 7 headers, `e
 | `libcudart.so.12`, `libnpp*.so.12`, `libcudnn.so.9` or `libnvinfer.so.10` not found | The bundled `external/cuda/lib` and `external/tensorrt/lib` are not on `LD_LIBRARY_PATH` | Apply the environment file and repeat the `ldd` check above |
 | `ld.so: object '...os-release-shim.so' from LD_PRELOAD cannot be preloaded` | The shim is not at the path in `LD_PRELOAD`; the program runs without it | Check the path in the drop-in or command; the package installs it at `/usr/lib/maxine-vfx/os-release-shim.so` |
 | `Cannot load libVideoFXTriton.so` in the SDK log | The Triton client library needs `libgrpcclient.so`, which is not used here | Harmless; ignore it |
+
+## Maxine AR SDK
+
+`maxine-ar-sdk-local` installs the AR SDK 1.2.0.0 (eye contact, face box detection, facial landmarks and the other features you packaged). It works like the Video Effects package above; this section lists what differs.
+
+### What the AR package installs
+
+| Path | Content |
+|---|---|
+| `/opt/nvidia/maxine/arsdk/` | The SDK tree: `lib/`, `lib/models/`, `features/`, `include/`, `external/cuda`, `external/tensorrt`, `share/` |
+| `/usr/lib/maxine-ar/os-release-shim.so` | The compatibility shim (the same one as in the other packages) |
+| `/usr/lib/maxine-ar/fake-os-release` | The replacement `os-release` (Ubuntu 24.04), the same content as shown in [The compatibility shim](#the-compatibility-shim) |
+| `/usr/share/maxine-ar/maxine-ar.env` | The environment file |
+| `/usr/share/licenses/maxine-ar-sdk-local/` | Links to the SDK's licence files, including the models' licence of each feature, and copies of `LICENSE-MIT` and `LICENSE-APACHE` (they cover the shim) |
+| `/usr/share/doc/maxine-ar-sdk-local/` | This page (`usage.md`) |
+
+The package also provides `maxine-ar-sdk=1.2.0.0`. A consumer's PKGBUILD should declare it as an optional dependency, for example `optdepends=('maxine-ar-sdk-local: NVIDIA Maxine AR effects')`.
+
+### The AR environment file
+
+`/usr/share/maxine-ar/maxine-ar.env` has the same format as the Video Effects one: plain `KEY=value` lines, no quotes or expansion, comments only on their own lines, usable as a systemd `EnvironmentFile=` and with `set -a`. Its keys, in file order, shown for three features and `sm_120`:
+
+```
+MAXINE_AR_ROOT=/opt/nvidia/maxine/arsdk
+MAXINE_AR_MODEL_DIR=/opt/nvidia/maxine/arsdk/lib/models
+MAXINE_AR_LIBRARY_PATH=/opt/nvidia/maxine/arsdk/lib:/opt/nvidia/maxine/arsdk/features/nvarfaceboxdetection/lib:/opt/nvidia/maxine/arsdk/features/nvargazeredirection/lib:/opt/nvidia/maxine/arsdk/features/nvarlandmarkdetection/lib:/opt/nvidia/maxine/arsdk/external/cuda/lib:/opt/nvidia/maxine/arsdk/external/tensorrt/lib
+LD_LIBRARY_PATH=<same value as MAXINE_AR_LIBRARY_PATH>
+MAXINE_AR_OS_RELEASE_SHIM=/usr/lib/maxine-ar/os-release-shim.so
+MAXINE_OS_RELEASE=/usr/lib/maxine-ar/fake-os-release
+MAXINE_AR_FEATURES=nvarfaceboxdetection,nvargazeredirection,nvarlandmarkdetection
+MAXINE_AR_ARCHS=sm_120
+```
+
+`MAXINE_AR_FEATURES` and `MAXINE_AR_ARCHS` are informational: comma-separated lists of what was packaged. The library path has one `features/<feature>/lib` entry per packaged feature, sorted by name, between `lib` and the bundled CUDA and TensorRT directories. The file never sets `LD_PRELOAD`.
+
+Load it for one program only: as `EnvironmentFile=/usr/share/maxine-ar/maxine-ar.env` in a systemd unit, or for one command or session with:
+
+```bash
+set -a; . /usr/share/maxine-ar/maxine-ar.env; set +a
+```
+
+Never source it from a login profile, `~/.bashrc` or `~/.profile`. The bundled directories must be on `LD_LIBRARY_PATH` for the SDK, because none of the CUDA 12 or TensorRT 10 sonames it needs exist system-wide on Arch, and the feature libraries are found by `dlopen`.
+
+### The shim and running a program (AR)
+
+The AR feature libraries read `/etc/os-release`, like the Video Effects model loader, so on a distribution the SDK does not list they need the shim: see [The compatibility shim](#the-compatibility-shim) for what it does and for `MAXINE_OS_RELEASE_DEBUG=1`. The package's environment file sets `MAXINE_OS_RELEASE` and `MAXINE_AR_OS_RELEASE_SHIM`, and the program has to preload the shim. Preload it on the final program only, as explained there: a wrapper that carries `LD_PRELOAD` loads the shim itself, drops the variable and starts the program without it.
+
+```bash
+set -a; . /usr/share/maxine-ar/maxine-ar.env; set +a
+env LD_PRELOAD=$MAXINE_AR_OS_RELEASE_SHIM <program> [args]
+```
+
+A systemd user unit, at `~/.config/systemd/user/<service>.service.d/maxine-ar.conf`:
+
+```ini
+[Service]
+EnvironmentFile=/usr/share/maxine-ar/maxine-ar.env
+Environment=LD_PRELOAD=/usr/lib/maxine-ar/os-release-shim.so
+```
+
+Then `systemctl --user daemon-reload` and restart the service. Remove the file, reload and restart to go back to the unit without the SDK.
+
+### Models (AR)
+
+`MAXINE_AR_MODEL_DIR` (`/opt/nvidia/maxine/arsdk/lib/models`) holds the model files of the packaged features for the architectures you built the package with (`MAXINE_AR_ARCHS`), together with the files the core ships there. Models are not found by searching: a program passes this directory to the SDK as the model directory of the feature it creates. The models of all packaged features share this one directory. The package creates no engine cache directory.
+
+### Check the AR installation
+
+```bash
+pacman -Ql maxine-ar-sdk-local | head
+ls /opt/nvidia/maxine/arsdk/lib/models
+(set -a; . /usr/share/maxine-ar/maxine-ar.env; set +a
+ ldd /opt/nvidia/maxine/arsdk/lib/libnvARPose.so | grep 'not found')
+```
+
+With the environment file applied, the `ldd` command prints nothing, and the model directory lists files for your architecture. If a feature fails to load, check the same causes as in [Troubleshooting](#troubleshooting): the shim is not preloaded on the program itself (`MAXINE_OS_RELEASE_DEBUG=1` shows whether it is active), the feature libraries are not on `LD_LIBRARY_PATH`, or the model directory is wrong.
+
+## Maxine Audio Effects SDK
+
+`maxine-afx-sdk-local` installs the Audio Effects SDK 3.0.0, package version 3.0.0.12 (noise removal, room echo removal, both together, Studio Voice and the other effects you packaged).
+
+### What the AFX package installs
+
+| Path | Content |
+|---|---|
+| `/opt/nvidia/maxine/afx/` | The SDK tree as NVIDIA lays it out: `nvafx/lib`, `nvafx/include`, `features/<feature>/{lib,include,licenses,models}`, `external/cuda/lib` (CUDA 12.8, cuDNN 9.7.1 and TensorRT 10.9), `licenses/`, `samples/`, `version.h` |
+| `/usr/lib/maxine-afx/os-release-shim.so` | The compatibility shim |
+| `/usr/lib/maxine-afx/fake-os-release` | The replacement `os-release` (Ubuntu 24.04) |
+| `/usr/share/maxine-afx/maxine-afx.env` | The environment file |
+| `/usr/share/licenses/maxine-afx-sdk-local/` | Links to the SDK's licence files (its agreements, the models' licence, the third-party notices), and copies of `LICENSE-MIT` and `LICENSE-APACHE` |
+| `/usr/share/doc/maxine-afx-sdk-local/` | This page (`usage.md`) |
+
+The package also provides `maxine-afx-sdk=3.0.0.12`. Declare it as an optional dependency, for example `optdepends=('maxine-afx-sdk-local: NVIDIA Maxine audio effects')`.
+
+### The AFX environment file
+
+`/usr/share/maxine-afx/maxine-afx.env` has the same format as the others. Its keys, in file order, shown for two features at 48 kHz and `sm_120`:
+
+```
+MAXINE_AFX_ROOT=/opt/nvidia/maxine/afx
+MAXINE_AFX_FEATURES_DIR=/opt/nvidia/maxine/afx/features
+MAXINE_AFX_LIBRARY_PATH=/opt/nvidia/maxine/afx/nvafx/lib:/opt/nvidia/maxine/afx/features/denoiser/lib:/opt/nvidia/maxine/afx/features/studio_voice/lib:/opt/nvidia/maxine/afx/external/cuda/lib
+LD_LIBRARY_PATH=<same value as MAXINE_AFX_LIBRARY_PATH>
+MAXINE_AFX_OS_RELEASE_SHIM=/usr/lib/maxine-afx/os-release-shim.so
+MAXINE_OS_RELEASE=/usr/lib/maxine-afx/fake-os-release
+MAXINE_AFX_FEATURES=denoiser,studio_voice
+MAXINE_AFX_ARCHS=sm_120
+MAXINE_AFX_RATES=48k
+```
+
+`MAXINE_AFX_FEATURES`, `MAXINE_AFX_ARCHS` and `MAXINE_AFX_RATES` are informational: comma-separated lists of what was packaged. The library path is `nvafx/lib`, one `features/<feature>/lib` per packaged feature (sorted by name), then `external/cuda/lib`; there is no separate TensorRT directory, it is in `external/cuda/lib`. The path is needed because the feature libraries are loaded by `libnv_audiofx.so`, and their own search path does not reach `external/cuda/lib`. The file never sets `LD_PRELOAD`.
+
+Load it for one program only, in the same two ways as the other packages (`EnvironmentFile=/usr/share/maxine-afx/maxine-afx.env`, or `set -a; . /usr/share/maxine-afx/maxine-afx.env; set +a`), and never from a login profile.
+
+### The shim and running a program (AFX)
+
+The feature libraries read `/etc/os-release`, so the shim is installed alongside and stays inactive until the program preloads it. Read [The compatibility shim](#the-compatibility-shim) for what it does; the rule about preloading on the final program applies unchanged.
+
+```bash
+set -a; . /usr/share/maxine-afx/maxine-afx.env; set +a
+env LD_PRELOAD=$MAXINE_AFX_OS_RELEASE_SHIM <program> [args]
+```
+
+A systemd user unit, at `~/.config/systemd/user/<service>.service.d/maxine-afx.conf`:
+
+```ini
+[Service]
+EnvironmentFile=/usr/share/maxine-afx/maxine-afx.env
+Environment=LD_PRELOAD=/usr/lib/maxine-afx/os-release-shim.so
+```
+
+### Models (AFX)
+
+The Audio Effects SDK does not search for models: an application passes the path of a model to the effect, as its `model_path` parameter. Each feature's models are in `features/<feature>/models/sm_<N>/`, the models of every sample rate of that architecture side by side. The environment file therefore gives the directory to build the path from, not a single model directory:
+
+```
+$MAXINE_AFX_FEATURES_DIR/<feature>/models/sm_<N>/<model>.trtpkg
+```
+
+For example `/opt/nvidia/maxine/afx/features/denoiser/models/sm_120/denoiser_48k.trtpkg`. A model can be named without its build number: like NVIDIA's `download_features.sh`, the build adds a relative link without the trailing number to each model, so `denoiser_48k.trtpkg` points at `denoiser_48k_<build>.trtpkg`. Use the architecture and sample rate your package holds (`MAXINE_AFX_ARCHS` and `MAXINE_AFX_RATES`; a package may hold several of each). The models' `.md5` files are checked during the build and are not installed.
+
+### Check the AFX installation
+
+```bash
+pacman -Ql maxine-afx-sdk-local | head
+ls /opt/nvidia/maxine/afx/features/denoiser/models/sm_120
+(set -a; . /usr/share/maxine-afx/maxine-afx.env; set +a
+ ldd /opt/nvidia/maxine/afx/nvafx/lib/libnv_audiofx.so | grep 'not found')
+```
+
+With the environment file applied, the `ldd` command prints nothing. Use a feature and architecture your package holds in the second command.
+
+## Why nothing is global
+
+None of the three packages installs an `/etc/ld.so.conf.d` entry or an `/etc/profile.d` file, or sets `LD_LIBRARY_PATH` or `LD_PRELOAD` globally, and none writes under `/etc`:
+
+- Each SDK bundles its own CUDA 12.8, cuDNN and TensorRT 10.9. On Arch, which ships CUDA 13, putting them on the global library path would shadow the system libraries for every program. The bundled directories are on the path only for the program that loads the environment file.
+- `LD_PRELOAD` is per process by design. The shim redirects one file, `/etc/os-release`, for the process that preloads it, so that only that process sees the replacement and the real file stays untouched.
+- The packages can be installed side by side because each has its own directory under `/opt/nvidia/maxine/`, its own `/usr/lib/maxine-*` and its own environment file. A program that uses more than one SDK must combine them itself. The environment files all set `LD_LIBRARY_PATH`, so with two files loaded the later one wins: build the value from the `MAXINE_VFX_LIBRARY_PATH`, `MAXINE_AR_LIBRARY_PATH` and `MAXINE_AFX_LIBRARY_PATH` keys, which are the same values under names that do not collide, and set `LD_LIBRARY_PATH` explicitly. In a systemd unit, write the joined value out in an `Environment=LD_LIBRARY_PATH=...` line after the `EnvironmentFile=` lines, since the unit file cannot expand a variable that comes from an environment file.
+- A package whose SDK you do not use costs nothing at run time: nothing loads it until a program opts in.
