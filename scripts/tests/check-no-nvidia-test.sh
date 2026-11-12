@@ -206,6 +206,66 @@ stage_case pass "nvar without _v<digit> is not an NGC directory" nvarchive/notes
 stage_case pass "a file named like an AR download directory is not one" \
     docs/ar_sdk_core_v1.2.0.0_linux.md printf '# notes\n'
 
+echo "== paths: the Optical Flow SDK"
+of=nvidia-optical-flow
+stage_case fail "$of/src/ (makepkg work directory) fails" "$of/src/of/include/x.txt" printf 'x\n'
+stage_case fail "$of/pkg/ (makepkg work directory) fails" "$of/pkg/usr/share/x.txt" printf 'x\n'
+for f in PKGBUILD README.md assemble.sh configure.sh selection.sh tests/configure-test.sh \
+    tests/pkgbuild-test.sh; do
+    stage_case pass "the recipe file $of/$f passes" "$of/$f" printf '# recipe\n'
+done
+# The SDK's top-level names and the installed tree's, as plain text files.
+for f in NvOFInterface/notes.txt NvOFBasicSamples/README.md NvOFTracker/CMakeLists.txt \
+    NvOFFRUC/notes.txt Common/External/FreeImage/licence-fi.txt include/notes.txt \
+    fruc/include/notes.txt samples/README.md tracker/README.md licenses/terms.txt; do
+    stage_case fail "an SDK file $of/$f fails" "$of/$f" printf 'plain text\n'
+done
+stage_case pass "a top-level name under the recipe's tests/ is not an SDK tree" \
+    "$of/tests/include/helper.sh" printf '# recipe\n'
+for d in Optical_Flow_SDK_5.0.7 optical_flow_sdk_5.0.7 OPTICAL_FLOW_SDK_5.0; do
+    stage_case fail "an unpacked $d/ at the top fails" "$d/Read_Me.txt" printf 'plain text\n'
+    stage_case fail "an unpacked $d/ in a recipe directory fails" "$of/$d/NvOFInterface/x.txt" \
+        printf 'plain text\n'
+    stage_case fail "an unpacked $d/ elsewhere fails" "docs/dl/$d/notes.txt" printf 'plain text\n'
+done
+stage_case pass "a file named like the SDK's directory is not one" docs/optical_flow_sdk_notes.md \
+    printf '# notes\n'
+stage_case fail "the Optical Flow SDK zip fails" "$of/optical_flow_sdk_5.0.7.zip" printf 'x\n'
+for f in nvOpticalFlowCommon.h nvOpticalFlowCuda.h nvOpticalFlowD3D11.h NvFRUC.h NvOFTracker.h; do
+    stage_case fail "the Optical Flow SDK header $f fails" "src/$f" printf '/* fake */\n'
+done
+stage_case fail "the FRUC library fails" lib/NvFRUC.so printf 'x\n'
+stage_case fail "FRUC's bundled CUDA runtime fails" lib/libcudart.so.11.6.55 printf 'x\n'
+
+echo "== paths: TensorRT"
+trt=nvidia-tensorrt
+stage_case fail "$trt/src/ (makepkg work directory) fails" "$trt/src/x/y.txt" printf 'x\n'
+stage_case fail "$trt/pkg/ (makepkg work directory) fails" "$trt/pkg/usr/x.txt" printf 'x\n'
+for f in PKGBUILD README.md configure.sh selection.sh source.sh tests/configure-test.sh \
+    tests/pkgbuild-test.sh; do
+    stage_case pass "the recipe file $trt/$f passes" "$trt/$f" printf '# recipe\n'
+done
+for d in include lib bin python samples data doc targets; do
+    stage_case fail "a TensorRT file $trt/$d/notes.txt fails" "$trt/$d/notes.txt" printf 'plain text\n'
+done
+stage_case fail "the TensorRT tarball's targets/x86_64-linux-gnu/ fails" \
+    "$trt/targets/x86_64-linux-gnu/include/notes.txt" printf 'plain text\n'
+stage_case pass "a top-level name under the recipe's tests/ (targets/) is not an SDK tree" \
+    "$trt/tests/targets/helper.sh" printf '# recipe\n'
+stage_case pass "a top-level name under the recipe's tests/ is not an SDK tree" \
+    "$trt/tests/data/helper.sh" printf '# recipe\n'
+for f in NvInfer.h NvInferRuntime.h NvOnnxParser.h NvOnnxParserRuntime.h NvOnnxConfig.h; do
+    stage_case fail "the TensorRT header $f fails" "src/$f" printf '/* fake */\n'
+done
+stage_case fail "an unpacked TensorRT-10.4.0.26/ at the top fails" TensorRT-10.4.0.26/notes.txt \
+    printf 'plain text\n'
+stage_case fail "an unpacked TensorRT-*/ in a recipe directory fails" \
+    "$trt/TensorRT-10.4.0.26/notes.txt" printf 'plain text\n'
+stage_case fail "an unpacked TensorRT-*/ elsewhere fails" docs/dl/TensorRT-10.4/a/notes.txt \
+    printf 'plain text\n'
+stage_case pass "a file named like the TensorRT directory is not one" docs/TensorRT-notes.md \
+    printf '# notes\n'
+
 echo "== content"
 stage_case fail "ELF magic under an innocent name fails" tool.txt elf
 stage_case fail "gzip data named notes.txt fails" notes.txt sh -c 'printf "hello\n" | gzip -c'

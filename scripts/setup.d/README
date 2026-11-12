@@ -2,39 +2,99 @@ SDK descriptors of scripts/setup.sh, one file per SDK, read in the order of
 their file names (NN-<key>.conf). setup.sh PARSES them as KEY=value text; it
 never sources or runs them. Adding an SDK means adding one descriptor here and
 its package directory (with PKGBUILD, configure.sh, selection.sh and,
-optionally, download.sh); setup.sh has no per-SDK code.
+optionally, download.sh); setup.sh has no per-SDK code: it branches on what a
+descriptor holds, never on its key.
 
 Format: blank lines, comment lines (# first), and KEY=value lines; a value is
 the rest of the line, taken literally (no quotes, no $, no backtick, no
 control character). An unknown key or a duplicate key is an error. Paths of
 the installed tree are absolute (setup.sh prefixes them with
 MAXINE_SETUP_ROOT); a default_src or post_out beginning with ~/ is under
-$HOME; package-relative and root-relative paths have no leading /.
+$HOME; package-relative and root-relative paths have no leading / and no ..
+A list is space separated.
 
 Required:
-  key           short name: --sdk KEY, --features-KEY (a-z, 0-9)
+  key           short name: --sdk KEY, --features-KEY, --src-KEY (a-z, 0-9)
   title         the SDK's name in messages
   package       the package directory at the top of the repository; its
-                PKGBUILD gives pkgname, pkgver, pkgrel, url (the catalogue
+                PKGBUILD gives pkgname, pkgver, pkgrel, url (the download
                 page) and arch, read as text
-  default_src   the default download directory
-  configure     the package's configure.sh: `configure --src DIR` (read-only)
-                validates a download and lists what it holds
-  checksum_glob the checksum files of a download (each one names the file
-                beside it without its last extension)
+  default_src   the default download location (a directory)
+  configure     the package's configure.sh (see "The package's scripts")
   byhand_doc    the manual-download instructions (docs/<file>#<anchor>)
   check_doc     the installation check by hand (docs/<file>#<anchor>)
   root          the installed SDK root
   env_file      the installed environment file
   env_prefix    the prefix of its keys (<prefix>_ROOT, _LIBRARY_PATH,
-                _ARCHS, _FEATURES; <prefix>_SRC is the download directory
-                variable; lower case, the prefix of selection.sh's
-                <prefix>_read_selection and <prefix>_file_src)
-  core_lib      the core library, relative to root, for the ldd check
-  model_dir     the model directory relative to root (or <prefix>_<model_dir_var>)
+                _FEATURES, and _ARCHS for an SDK with models per
+                architecture); <prefix>_SRC is the download location
+                variable; lower case, the prefix of selection.sh's functions
+
+How the download is obtained:
+  obtain        ngc (the default): from NGC, with the package's download.sh
+                and the user's own NGC CLI; a missing download prints the NGC
+                steps and offers download.sh.
+                browser: one file the user downloads in a browser after
+                accepting the licence; a missing download prints the browser
+                steps (log in to the NVIDIA Developer Program, open the url,
+                Accept & Download download_file, save it in default_src or
+                pass --src-KEY) and waits for Enter to re-check or s to skip.
+                It never mentions NGC or download.sh.
+  download_file the file of a one-file download (required with
+                obtain=browser); {version} is the PKGBUILD's pkgver. A
+                directory without a file matching it ({version} as *) that
+                configure.sh refuses is a missing download. The download
+                that configure.sh accepts is selected as the file it reports
+                on its "source <path>" line.
+  licence       the licence named in the browser steps (default: NVIDIA's
+                licence)
+
+configure.sh:
+  configure_select  the options `configure --src PATH ... --write` takes
+                besides --src and --write: archs (--archs, the detected
+                GPU architectures), features (--features all), both (the
+                default: "archs features") or none. Only an SDK that takes
+                --archs needs a detected GPU.
+  checksum_glob the checksum files of a download (each one names the file
+                beside it without its last extension), checked after
+                configure.sh accepts it; none without it
+
+The installation check (each optional; a column with nothing to check
+prints -):
+  core_lib      the core library, relative to root, for the ldd check; an
+                SDK with one needs a non-empty <prefix>_LIBRARY_PATH (without
+                one, an empty or absent library path is "-")
+  optional_libs globs, relative to root, of libraries that are ldd'd with
+                the env file's library path when they are there
+  system_libs   library file names that must be on the system: a path
+                check of /usr/lib, /usr/lib64, /lib, /lib64 (under
+                MAXINE_SETUP_ROOT when it is set, and only there), else the
+                read-only `ldconfig -p`
+  check_files   files, relative to root, that must exist
+  model_dir     the model directory relative to root (or
+                <prefix>_<model_dir_var>); with model_glob
   model_glob    the models below it; {feature} and {arch} (sm_<N>) expand
-Optional:
   model_dir_var the env file key suffix that overrides model_dir
+
+Placeholders (an SDK that is not installable yet):
+  status        placeholder: the entry is listed (--help, the SDK choice) as
+                "access required", and choosing it (--sdk KEY, or yes to its
+                question) only prints how to request access. It is never
+                downloaded, configured, built, installed or verified, needs
+                no package directory, and --sdk all (or a dry run without
+                --sdk) skips it with one line. Only key, title, status and
+                the keys below are allowed; any other key is an error.
+  request_url   (required) an https page where access is requested
+  request_steps (required) the steps, separated by |, printed as a list
+  summary       one line shown in --help and before the steps
+  licence       the licence the access is under (as above)
+  request_note  one more line printed after the request page
+                To activate the entry a maintainer adds package and every
+                other required key (and the package directory) and removes
+                status=placeholder. request_* and summary are errors in an
+                active entry.
+
+Optional downloads and features added after the install (obtain=ngc only):
   feature_lib   a feature's library directory below model_dir, beginning
                 with {feature} (the feature's own directory, the unit that is
                 copied in or reported as not owned by pacman); required
@@ -53,3 +113,25 @@ Optional:
   post_out      the directory it downloads into (required with post_script):
                 each run downloads into a new directory below it, and only
                 the requested features' directories are copied from there
+
+The package's scripts (the contract setup.sh relies on), with p the
+lower-case env_prefix (MAXINE_VFX -> maxine_vfx, NVIDIA_OF -> nvidia_of):
+  configure --src PATH        read-only; exit 0 when the download is valid,
+                              non-zero with the reason on stderr otherwise
+                              (setup.sh prints its first stderr line). setup.sh
+                              reads these lines of its output when present:
+                              "layout <word>" (tree: an SDK tree, packaged
+                              as it is) and "source <absolute path>"
+  configure --src PATH [opts] --write   writes the package's selection.conf
+  configure --show            prints the selection.conf
+  selection.sh                sourced in a subshell; defines
+                              p_read_selection <file>, which returns 0 when
+                              the file is valid (or absent) and sets
+                              p_file_src to its <prefix>_SRC (empty when
+                              absent)
+  <PREFIX>_SRC                the environment variable configure.sh and the
+                              PKGBUILD take the download location from;
+                              setup.sh sets it for makepkg to the source it
+                              validated (the one a kept selection.conf
+                              records, when that differs from --src-KEY or
+                              the environment)

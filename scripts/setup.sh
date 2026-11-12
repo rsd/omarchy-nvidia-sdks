@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
-# Guided setup of the Maxine SDK packages of this repository: checks the
+# Guided setup of the NVIDIA SDK packages of this repository: checks the
 # machine, offers each SDK's optional downloads, finds and validates your own
-# NGC download of each SDK you choose, and walks through configure.sh,
-# makepkg, the installation, the features an SDK adds after its install
-# (NVIDIA's download_features.sh for the Audio Effects SDK) and a read-only
-# check of the result. It asks before every step that changes anything (the
-# default answer is always no) and prints the command it would run, so every
-# step can also be done by hand. Running it again is safe: what is already
-# done (a valid download, a selection.conf, a built package, the installed
-# version, copied features) is detected and kept.
+# download of each SDK you choose (from NGC, or a file you download in a
+# browser), and walks through configure.sh, makepkg, the installation, the
+# features an SDK adds after its install (NVIDIA's download_features.sh for
+# the Audio Effects SDK) and a read-only check of the result. It asks before
+# every step that changes anything (the default answer is always no) and
+# prints the command it would run, so every step can also be done by hand.
+# Running it again is safe: what is already done (a valid download, a
+# selection.conf, a built package, the installed version, copied features)
+# is detected and kept.
 #
 # The SDKs are data, not code: one descriptor per SDK in scripts/setup.d/
 # (format: scripts/setup.d/README), PARSED as KEY=value text, never sourced.
 # The optional downloads of an SDK are read from the array literals of its
 # download.sh, as text; nothing of download.sh is run to read them.
 #
-# What it never does: accept a licence, log in to NGC, run `ngc config`, read
-# ~/.ngc or any other credential, run `makepkg -i` or `-s`, run `pacman -R`,
-# or run sudo without your explicit yes. Prompts are read from stdin and
+# What it never does: accept a licence, log in to NGC or to NVIDIA's site,
+# run `ngc config`, read ~/.ngc or any other credential, run `makepkg -i` or
+# `-s`, run `pacman -R`, or run sudo without your explicit yes. Prompts are read from stdin and
 # written to stderr; the script never opens /dev/tty itself (download.sh,
 # which it offers to run, asks on the terminal on its own).
 #
 # MAXINE_SETUP_ROOT (empty by default) is a prefix for the system paths it
-# reads and writes (/opt and /usr/share), for tests. The download directories
-# are under $HOME. See --help.
+# reads and writes (/opt, /usr/share and the system libraries it checks),
+# for tests. The download directories are under $HOME. See --help.
 #
 # Exit status: 0 done (an SDK you skipped is not a failure), 1 a hard blocker
 # or a failed step, 2 usage error.
@@ -84,44 +85,115 @@ home_path() { # home_path <value>: ~/x is $HOME/x
 }
 
 # The descriptors: D[<key>:<field>]. Parsed as text; every value is checked.
-desc_fields=(key title package default_src configure checksum_glob byhand_doc check_doc root
-    env_file env_prefix core_lib model_dir model_dir_var model_glob feature_lib catalogue
+# The main flow branches on what a descriptor holds (how the download is
+# obtained, which options configure.sh takes, which files are checked),
+# never on an SDK's key.
+desc_fields=(key title package obtain download_file licence default_src configure configure_select
+    checksum_glob byhand_doc check_doc root env_file env_prefix core_lib check_files system_libs
+    optional_libs model_dir model_dir_var model_glob feature_lib catalogue
     catalogue_features catalogue_early_access catalogue_what catalogue_default
-    post_script post_args post_out)
-desc_required=(key title package default_src configure checksum_glob byhand_doc check_doc root
-    env_file env_prefix core_lib model_dir model_glob)
+    post_script post_args post_out status summary request_url request_steps request_note)
+# A placeholder (status=placeholder) is an SDK that is not installable yet:
+# only these keys are allowed, and request_url and request_steps are required.
+ph_fields=(key title status summary licence request_url request_steps request_note)
+desc_required=(key title package default_src configure byhand_doc check_doc root
+    env_file env_prefix)
 declare -A D=()
-sdk_keys=()
+sdk_keys=()  # the installable SDKs
+ph_keys=()   # the placeholders (access required), never set up
+all_keys=()  # both, in descriptor order: what is listed
+# rel_words <value>: every word is a relative path without ..
+rel_words() {
+    local w
+    local -a words
+    read -r -a words <<<"$1"
+    for w in "${words[@]}"; do [[ $w != /* && $w != *..* ]] || return 1; done
+    return 0
+}
 # read_descriptor <file>: adds one SDK to D and sdk_keys.
 read_descriptor() {
-    local file=$1 line field value lineno=0 key
+    local file=$1 line field value lineno=0 key w
     local -A seen=()
+    local -a words
     while IFS= read -r line || [[ -n $line ]]; do
         lineno=$((lineno + 1))
         [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
         [[ $line =~ ^([a-z_]+)=(.*)$ ]] || die "$file:$lineno: not a KEY=value line"
         field=${BASH_REMATCH[1]} value=${BASH_REMATCH[2]}
         in_list "$field" "${desc_fields[@]}" || die "$file:$lineno: unknown key $field"
-        [[ -z ${seen[$field]:-} ]] || die "$file:$lineno: duplicate key $field"
+        [[ -z ${seen[$field]+set} ]] || die "$file:$lineno: duplicate key $field"
         [[ $value != *[\$\`\"\'\\[:cntrl:]]* ]] ||
             die "$file:$lineno: a \$, backtick, quote, backslash or control character is not allowed"
         seen[$field]=$value
     done <"$file"
+    key=${seen[key]:-}
+    if [[ -n ${seen[status]+set} ]]; then
+        # status=placeholder: listed, not installable; setup.sh only prints
+        # how to request access.
+        [[ ${seen[status]} == placeholder ]] || die "$file: status must be placeholder"
+        for field in key title request_url request_steps; do
+            [[ -n ${seen[$field]:-} ]] || die "$file: a placeholder needs $field="
+        done
+        for field in "${!seen[@]}"; do
+            in_list "$field" "${ph_fields[@]}" ||
+                die "$file: a placeholder has no $field= (a maintainer adds it and removes status=placeholder to activate the entry)"
+        done
+        [[ $key =~ ^[a-z0-9]+$ ]] || die "$file: key must be lower-case letters and digits"
+        in_list "$key" "${all_keys[@]}" && die "$file: the key $key is used twice"
+        [[ ${seen[request_url]} == https://* ]] || die "$file: request_url must be an https URL"
+        for field in "${!seen[@]}"; do D[$key:$field]=${seen[$field]}; done
+        ph_keys+=("$key")
+        all_keys+=("$key")
+        return 0
+    fi
+    for field in request_url request_steps request_note summary; do
+        [[ -z ${seen[$field]+set} ]] || die "$file: $field is for a placeholder (status=placeholder)"
+    done
     for field in "${desc_required[@]}"; do
         [[ -n ${seen[$field]:-} ]] || die "$file: no $field="
     done
-    key=${seen[key]}
     [[ $key =~ ^[a-z0-9]+$ ]] || die "$file: key must be lower-case letters and digits"
-    in_list "$key" "${sdk_keys[@]}" && die "$file: the key $key is used twice"
+    in_list "$key" "${all_keys[@]}" && die "$file: the key $key is used twice"
     [[ ${seen[package]} =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || die "$file: package must be a directory name"
     [[ ${seen[env_prefix]} =~ ^[A-Z][A-Z0-9_]*$ ]] || die "$file: env_prefix must be upper case"
     for field in root env_file; do
         [[ ${seen[$field]} == /* && ${seen[$field]} != *..* ]] || die "$file: $field must be an absolute path"
     done
-    for field in configure catalogue core_lib model_dir post_script; do
-        [[ -z ${seen[$field]:-} || (${seen[$field]} != /* && ${seen[$field]} != *..*) ]] ||
-            die "$file: $field must be a relative path inside its directory"
+    for field in configure catalogue core_lib model_dir post_script check_files optional_libs; do
+        rel_words "${seen[$field]:-}" || die "$file: $field must be relative paths inside its directory"
     done
+    # How the download is obtained: ngc (the package's download.sh with your
+    # own NGC CLI; the default) or browser (one file, downloaded by hand).
+    : "${seen[obtain]:=ngc}"
+    [[ ${seen[obtain]} == ngc || ${seen[obtain]} == browser ]] || die "$file: obtain must be ngc or browser"
+    [[ ${seen[obtain]} != browser || -n ${seen[download_file]:-} ]] || die "$file: obtain=browser needs download_file="
+    [[ -z ${seen[download_file]:-} || ${seen[download_file]} =~ ^[A-Za-z0-9_.+*{}-]+$ ]] ||
+        die "$file: download_file must be a file name (letters, digits, _ . + - * and {version})"
+    for field in catalogue post_script; do
+        [[ -z ${seen[$field]:-} || ${seen[obtain]} == ngc ]] || die "$file: $field needs obtain=ngc"
+    done
+    # The options configure.sh takes besides --src and --write: archs,
+    # features (the default: both), or none.
+    : "${seen[configure_select]=archs features}"
+    if [[ ${seen[configure_select]} == none ]]; then
+        seen[configure_select]=''
+    elif [[ ${seen[configure_select]} == both ]]; then
+        seen[configure_select]='archs features'
+    else
+        read -r -a words <<<"${seen[configure_select]}"
+        ((${#words[@]} > 0)) || die "$file: configure_select must be archs, features, both, or none"
+        for w in "${words[@]}"; do
+            [[ $w == archs || $w == features ]] || die "$file: configure_select must be archs, features, both, or none"
+        done
+    fi
+    read -r -a words <<<"${seen[system_libs]:-}"
+    for w in "${words[@]}"; do
+        [[ $w =~ ^[A-Za-z0-9_.+-]+$ ]] || die "$file: system_libs must be library file names"
+    done
+    # The models: model_dir and model_glob together, or neither.
+    [[ -z ${seen[model_dir]:-} && -z ${seen[model_glob]:-} ]] ||
+        [[ -n ${seen[model_dir]:-} && -n ${seen[model_glob]:-} ]] ||
+        die "$file: model_dir and model_glob go together"
     # A post_script adds features into feature directories: it needs to know
     # where a feature's library is, and where it downloads to.
     if [[ -n ${seen[post_script]:-} ]]; then
@@ -129,11 +201,35 @@ read_descriptor() {
             [[ -n ${seen[$field]:-} ]] || die "$file: post_script needs $field="
         done
     fi
+    [[ -z ${seen[feature_lib]:-} || -n ${seen[model_dir]:-} ]] || die "$file: feature_lib needs model_dir="
     [[ -z ${seen[feature_lib]:-} || (${seen[feature_lib]} == '{feature}'* && ${seen[feature_lib]} != *..*) ]] ||
         die "$file: feature_lib must begin with {feature} (the feature's directory below model_dir)"
     for field in "${!seen[@]}"; do D[$key:$field]=${seen[$field]}; done
     sdk_keys+=("$key")
+    all_keys+=("$key")
 }
+# print_request <key>: how to request access to a placeholder SDK. Nothing
+# is downloaded, configured, built, installed or verified.
+print_request() {
+    local key=$1 s
+    local -a steps
+    say ""
+    say "== ${D[$key:title]}: access required (not installable yet)"
+    [[ -z ${D[$key:summary]:-} ]] || say "  ${D[$key:summary]}"
+    [[ -z ${D[$key:licence]:-} ]] || say "  Licence: ${D[$key:licence]}"
+    say "  How to request access:"
+    IFS='|' read -r -a steps <<<"${D[$key:request_steps]}"
+    for s in "${steps[@]}"; do
+        s=${s#"${s%%[![:space:]]*}"} s=${s%"${s##*[![:space:]]}"}
+        [[ -z $s ]] || say "    - $s"
+    done
+    say "  Request page: ${D[$key:request_url]}"
+    [[ -z ${D[$key:request_note]:-} ]] || say "  ${D[$key:request_note]}"
+    say "  This entry becomes active once the item names are supplied: a maintainer adds the package,"
+    say "  the NGC item names and a package directory to its descriptor and removes the placeholder status."
+}
+# takes <key> <option>: configure.sh of the SDK takes --<option> (archs, features).
+takes() { local -a w; read -r -a w <<<"${D[$1:configure_select]}"; in_list "$2" "${w[@]}"; }
 shopt -s nullglob
 desc_files=("$desc_dir"/*.conf)
 shopt -u nullglob
@@ -267,27 +363,71 @@ parse_selection() {
     printf '%s\n' "${out[*]}"
 }
 
+# The packages: read from each PKGBUILD as text (never sourced).
+declare -A pkgname=() pkgver=() pkgrel=() pkgurl=() pkgarch=()
+# pkgbuild_value <file> <key>: a NAME=value line of a PKGBUILD, unquoted.
+pkgbuild_value() {
+    sed -n "s/^$2=//p" "$1" | head -n 1 | sed "s/^[('\"]*//; s/[)'\"]*\$//"
+}
+for key in "${sdk_keys[@]}"; do
+    pb=$repo/${D[$key:package]}/PKGBUILD
+    [[ -f $pb ]] || die "$pb not found: run this script from a clone of the repository"
+    pkgname[$key]=$(pkgbuild_value "$pb" pkgname)
+    pkgver[$key]=$(pkgbuild_value "$pb" pkgver)
+    pkgrel[$key]=$(pkgbuild_value "$pb" pkgrel)
+    pkgurl[$key]=$(pkgbuild_value "$pb" url)
+    pkgarch[$key]=$(pkgbuild_value "$pb" arch)
+    [[ ${pkgname[$key]} =~ ^[a-z0-9-]+$ && ${pkgver[$key]} =~ ^[0-9.]+$ && ${pkgrel[$key]} =~ ^[0-9]+$ ]] ||
+        die "cannot read pkgname, pkgver and pkgrel from $pb"
+    [[ -n ${pkgarch[$key]} ]] || pkgarch[$key]=$(uname -m)
+done
+
+# download_name <key>: the file of a one-file download, {version} as the
+# package version.
+download_name() { local f=${D[$1:download_file]:-}; printf '%s\n' "${f//\{version\}/${pkgver[$1]}}"; }
 usage() {
     local key
     cat <<USAGE
-Usage: scripts/setup.sh [--sdk LIST] [--features-KEY LIST]... [--dry-run]
+Usage: scripts/setup.sh [--sdk LIST] [--features-KEY LIST]... [--src-KEY PATH]... [--dry-run]
 
-Guided setup of the local Maxine SDK packages: preflight checks, the optional
-downloads of each SDK, your NGC download, configure.sh, makepkg,
+Guided setup of the local NVIDIA SDK packages: preflight checks, the optional
+downloads of each SDK, your own download of it, configure.sh, makepkg,
 installation, the features added after the install, a check of the
 installation, and the commands to undo it.
 
-  --sdk LIST           $(csv "${sdk_keys[@]}") (comma separated) or all; without it the
-                       script asks for each SDK (default answer: no)
+  --sdk LIST           $(csv "${all_keys[@]}") (comma separated) or all; without it the
+                       script asks for each SDK (default answer: no). A key marked
+                       "access required" only prints how to request access; all skips it
   --features-KEY LIST  the optional downloads of one SDK (KEY as in --sdk),
                        comma separated: names from the lists below, their
                        numbers, or all. Without it the script shows the list
                        and asks: numbers or names, all, or Enter for the
                        default (marked [x]). A dry run takes the default.
+  --src-KEY PATH       where the download of one SDK is (KEY as in --sdk):
+                       its download directory, or for an SDK downloaded as
+                       one file, that file, the directory holding it or its
+                       extracted tree. It comes before <PREFIX>_SRC, the
+                       package's selection.conf and the default location.
   --dry-run            read-only: run the checks and detection, ask nothing,
                        change nothing, and print every command it would run
                        (alias: --print-commands)
   -h, --help           this help
+
+Where each SDK comes from (and the default location of its download):
+USAGE
+    for key in "${all_keys[@]}"; do
+        if in_list "$key" "${ph_keys[@]}"; then
+            printf '  %-4s %s: access required, not installable yet (%s)\n       request: %s\n' "$key" \
+                "${D[$key:title]}" "${D[$key:summary]:-no summary}" "${D[$key:request_url]}"
+        elif [[ ${D[$key:obtain]} == browser ]]; then
+            printf '  %-4s %s %s: in a browser, %s from\n       %s (%s)\n' "$key" "${D[$key:title]}" \
+                "${pkgver[$key]}" "$(download_name "$key")" "${pkgurl[$key]}" "${D[$key:default_src]}"
+        else
+            printf '  %-4s %s %s: NGC, with %s/download.sh and your own NGC CLI (%s)\n' "$key" \
+                "${D[$key:title]}" "${pkgver[$key]}" "${D[$key:package]}" "${D[$key:default_src]}"
+        fi
+    done
+    cat <<USAGE
 
 The optional downloads are fetched before the build by the recipe's
 download.sh --features LIST, together with the SDK, so the package holds them
@@ -308,9 +448,10 @@ added after the install into the installed tree (cp -R
 directories asked for, from a new download directory, never a directory
 pacman owns), and for removing such copied directories when a newer
 package holds them (rm -r, before pacman -U would stop on them). The script never
-runs \`ngc config\`, never reads ~/.ngc, never runs \`makepkg -i\`/\`-s\` or
-\`pacman -R\`; the undo commands are printed, not run. nvidia-smi is queried
-once, which wakes a sleeping discrete GPU.
+runs \`ngc config\`, never reads ~/.ngc, never logs in or accepts a licence
+for you, never runs \`makepkg -i\`/\`-s\` or \`pacman -R\`; the undo commands
+are printed, not run. nvidia-smi is queried once, which wakes a sleeping
+discrete GPU.
 
 An Audio Effects effect not in the installed package (chosen after its
 install) is fetched by NVIDIA's own features/download_features.sh, which
@@ -322,24 +463,30 @@ the key to curl or wget on their command line (visible in the process list
 while it runs), which this script cannot prevent.
 
 Environment:
-  MAXINE_SETUP_ROOT   prefix for /opt and /usr/share (for tests; empty)
+  MAXINE_SETUP_ROOT   prefix for /opt, /usr/share and the system libraries
+                      checked (for tests; empty)
   NGC_API_KEY         the key for NVIDIA's download_features.sh
-  <PREFIX>_SRC        a download directory, as for configure.sh and makepkg
+  <PREFIX>_SRC        a download location, as for configure.sh and makepkg
                       ($(for key in "${sdk_keys[@]}"; do printf '%s_SRC\n' "${D[$key:env_prefix]}"; done | paste -sd ' '))
 
 The SDKs are described in scripts/setup.d/ (format: scripts/setup.d/README).
-Documentation: README.md, docs/download.md, docs/usage.md
+Documentation: README.md, docs/setup.md, $(for key in "${sdk_keys[@]}"; do printf '%s\n' "${D[$key:byhand_doc]%%#*}"; done | awk '!seen[$0]++' | paste -sd ' ' | sed 's/ /, /g')
 USAGE
 }
 
 dry_run=0 sdk_arg=''
-declare -A features_arg=()
+declare -A features_arg=() src_arg=()
 while (($#)); do
     case $1 in
-        --sdk | --features-*)
+        --sdk | --features-* | --src-*)
             (($# >= 2)) || usage_error "option $1 needs a value"
             if [[ $1 == --sdk ]]; then
                 sdk_arg=$2
+            elif [[ $1 == --src-* ]]; then
+                key=${1#--src-}
+                in_list "$key" "${sdk_keys[@]}" || usage_error "unknown option $1 (no SDK '$key')"
+                [[ -n $2 ]] || usage_error "$1 needs a path"
+                if [[ $2 == /* ]]; then src_arg[$key]=$2; else src_arg[$key]=$PWD/$2; fi
             else
                 key=${1#--features-}
                 in_list "$key" "${sdk_keys[@]}" || usage_error "unknown option $1 (no SDK '$key')"
@@ -367,42 +514,36 @@ ask() {
     [[ $answer == [yY] || $answer == [yY][eE][sS] ]]
 }
 
-# The packages: read from each PKGBUILD as text (never sourced).
-declare -A pkgname=() pkgver=() pkgrel=() pkgurl=() pkgarch=()
-# pkgbuild_value <file> <key>: a NAME=value line of a PKGBUILD, unquoted.
-pkgbuild_value() {
-    sed -n "s/^$2=//p" "$1" | head -n 1 | sed "s/^[('\"]*//; s/[)'\"]*\$//"
-}
-for key in "${sdk_keys[@]}"; do
-    pb=$repo/${D[$key:package]}/PKGBUILD
-    [[ -f $pb ]] || die "$pb not found: run this script from a clone of the repository"
-    pkgname[$key]=$(pkgbuild_value "$pb" pkgname)
-    pkgver[$key]=$(pkgbuild_value "$pb" pkgver)
-    pkgrel[$key]=$(pkgbuild_value "$pb" pkgrel)
-    pkgurl[$key]=$(pkgbuild_value "$pb" url)
-    pkgarch[$key]=$(pkgbuild_value "$pb" arch)
-    [[ ${pkgname[$key]} =~ ^[a-z0-9-]+$ && ${pkgver[$key]} =~ ^[0-9.]+$ && ${pkgrel[$key]} =~ ^[0-9]+$ ]] ||
-        die "cannot read pkgname, pkgver and pkgrel from $pb"
-    [[ -n ${pkgarch[$key]} ]] || pkgarch[$key]=$(uname -m)
-done
-
 # The SDKs to set up: --sdk, else asked after the preflight.
 chosen=()
+ph_chosen=() ph_skipped=()
 if [[ -n $sdk_arg ]]; then
     read -r -a words <<<"${sdk_arg//,/ }"
-    ((${#words[@]} > 0)) || usage_error "--sdk needs at least one of $(csv "${sdk_keys[@]}") or all"
+    ((${#words[@]} > 0)) || usage_error "--sdk needs at least one of $(csv "${all_keys[@]}") or all"
     for w in "${words[@]}"; do
         if [[ $w == all ]]; then
             chosen=("${sdk_keys[@]}")
+            ph_skipped=("${ph_keys[@]}")
+        elif in_list "$w" "${ph_keys[@]}"; then
+            in_list "$w" "${ph_chosen[@]}" || ph_chosen+=("$w")
         elif in_list "$w" "${sdk_keys[@]}"; then
             in_list "$w" "${chosen[@]}" || chosen+=("$w")
         else
-            usage_error "unknown SDK '$w' ($(csv "${sdk_keys[@]}") or all)"
+            usage_error "unknown SDK '$w' ($(csv "${all_keys[@]}") or all)"
         fi
     done
     ordered=()
     for key in "${sdk_keys[@]}"; do in_list "$key" "${chosen[@]}" && ordered+=("$key"); done
     chosen=("${ordered[@]}")
+    # An all that skipped a placeholder says so, once per placeholder, unless it was named too.
+    for key in "${ph_skipped[@]}"; do
+        in_list "$key" "${ph_chosen[@]}" || say "Skipped ${D[$key:title]}: access required, not installable yet (--sdk $key shows how to request access)."
+    done
+    for key in "${ph_chosen[@]}"; do print_request "$key"; done
+    if ((${#chosen[@]} == 0)); then
+        ((${#ph_chosen[@]} > 0)) || say "No SDK chosen: nothing to do."
+        exit 0
+    fi
 fi
 # The selections of optional downloads: selection[<key>], space separated.
 declare -A selection=()
@@ -412,6 +553,16 @@ for key in "${!features_arg[@]}"; do
 done
 
 ((dry_run)) && say "Dry run: read-only; nothing is asked, run or written. The commands are printed."
+
+# The SDKs the preflight is about: the chosen ones, else every one (they
+# are asked for after it).
+candidates=("${chosen[@]}")
+((${#candidates[@]} > 0)) || candidates=("${sdk_keys[@]}")
+needs_archs=0 needs_ngc=0
+for key in "${candidates[@]}"; do
+    takes "$key" archs && needs_archs=1
+    [[ ${D[$key:obtain]} == ngc ]] && needs_ngc=1
+done
 
 # 1. Preflight (read-only): explains what is missing, fixes nothing.
 say ""
@@ -481,8 +632,10 @@ fi
 archs_csv=$(csv "${archs[@]}")
 if ((${#archs[@]} > 0)); then
     say "  Architectures to package: ${archs[*]}"
-else
+elif ((needs_archs)); then
     warn "no supported GPU detected: configure.sh needs --archs sm_<N> from you (docs/gpu-support.md)"
+else
+    say "  Architectures: none detected (not needed by the SDKs chosen)"
 fi
 
 # free_kib <dir>: free KiB on the file system of the dir, or its nearest
@@ -507,7 +660,9 @@ if [[ $free =~ ^[0-9]+$ ]]; then
     ((free >= build_need)) ||
         warn "less than 13.2 GiB free in $repo: a build holds the SDK tree (about 4.4 GiB) in src/, makepkg's copy of it in pkg/ and the package (about 4.4 GiB); each further SDK needs about as much"
 fi
-if command -v ngc >/dev/null 2>&1; then
+if ((!needs_ngc)); then
+    : # no SDK in question is downloaded from NGC
+elif command -v ngc >/dev/null 2>&1; then
     say "  NGC CLI: $(command -v ngc) (used only by download.sh, with your own configuration)"
 else
     say "  NGC CLI: not found. It is needed only to download with download.sh: docs/download.md#3-install-the-ngc-cli"
@@ -516,10 +671,17 @@ fi
 if ((${#chosen[@]} == 0)); then
     if ((dry_run)); then
         chosen=("${sdk_keys[@]}")
+        for key in "${ph_keys[@]}"; do
+            say "Skipped ${D[$key:title]}: access required, not installable yet (--sdk $key shows how to request access)."
+        done
     else
         say ""
-        for key in "${sdk_keys[@]}"; do
-            ask "Set up the ${D[$key:title]} (${pkgname[$key]} ${pkgver[$key]}-${pkgrel[$key]})?" && chosen+=("$key")
+        for key in "${all_keys[@]}"; do
+            if in_list "$key" "${ph_keys[@]}"; then
+                ask "Show how to request access to ${D[$key:title]} (access required, not installable yet)?" && print_request "$key"
+            else
+                ask "Set up the ${D[$key:title]} (${pkgname[$key]} ${pkgver[$key]}-${pkgrel[$key]})?" && chosen+=("$key")
+            fi
         done
     fi
 fi
@@ -648,21 +810,38 @@ present_table() {
         { $1 = $1; print }
         END { for (i = 1; i <= n; i++) print feats[i] archs }'
 }
-# validate <key> <dir>: 0 when configure.sh accepts the download (offline)
-# and every checksum matches; else v_reason says why. v_present holds what
-# it holds (present_table), v_layout configure.sh's layout (download or
-# tree).
-v_reason='' v_missing=0 v_present='' v_layout=''
+# validate <key> <path>: 0 when configure.sh accepts the download (offline)
+# and every checksum matches (an SDK with checksum_glob); else v_reason says
+# why. v_present holds what it holds (present_table), v_layout
+# configure.sh's layout (download, tree, zip), v_source the path it reports
+# on a "source <path>" line (empty without one). A download is missing when
+# the path does not exist, when configure.sh finds no SDK core, or, for an
+# SDK downloaded as one file (download_file), when configure.sh refuses a
+# directory that holds no such file. v_error is the first line configure.sh
+# printed on stderr when it refused the download (empty otherwise).
+v_reason='' v_missing=0 v_present='' v_layout='' v_source='' v_error=''
 validate() {
-    local key=$1 dir=$2 out
-    v_reason='' v_missing=0 v_present='' v_layout=''
-    if [[ ! -d $dir ]]; then
+    local key=$1 dir=$2 all out err glob=${D[$1:download_file]:-} rc=0
+    v_reason='' v_missing=0 v_present='' v_layout='' v_source='' v_error=''
+    if [[ -z $glob && ! -d $dir ]]; then
         v_reason="the directory $dir does not exist" v_missing=1
         return 1
     fi
-    if ! out=$("$repo/${D[$key:package]}/${D[$key:configure]}" --src "$dir" 2>&1); then
-        if grep -q 'no Maxine .* SDK found in' <<<"$out"; then
-            v_reason="no SDK core in $dir" v_missing=1
+    if [[ ! -e $dir ]]; then
+        v_reason="$dir does not exist" v_missing=1
+        return 1
+    fi
+    # stderr is told apart by a unit separator at the start of each of its
+    # lines (no temporary file: a dry run writes nothing).
+    all=$("$repo/${D[$key:package]}/${D[$key:configure]}" --src "$dir" 2> >(sed 's/^/\x1f/')) || rc=$?
+    out=${all//$'\x1f'/}
+    if ((rc != 0)); then
+        err=$(sed -n 's/^\x1f//p' <<<"$all")
+        v_error=$(grep -m 1 -v '^[[:space:]]*$' <<<"$err" || true)
+        glob=${glob//\{version\}/*}
+        if grep -q 'no Maxine .* SDK found in' <<<"$out" ||
+            { [[ -n $glob && -d $dir ]] && ! compgen -G "$dir/$glob" >/dev/null; }; then
+            v_reason="no SDK in $dir" v_missing=1
             return 1
         fi
         v_reason="configure.sh cannot use it: $(grep -m 1 -i 'configure.sh\|assemble.sh\|error' <<<"$out" || head -n 1 <<<"$out")"
@@ -670,7 +849,9 @@ validate() {
     fi
     v_present=$(present_table <<<"$out")
     v_layout=$(awk '$1 == "layout" { print $2; exit }' <<<"$out")
-    if ! check_md5 "$dir" "${D[$key:checksum_glob]}"; then
+    v_source=$(sed -n 's/^source //p' <<<"$out" | head -n 1)
+    md5_count=0
+    if [[ -n ${D[$key:checksum_glob]:-} ]] && ! check_md5 "$dir" "${D[$key:checksum_glob]}"; then
         v_reason="bad checksum(s):"
         local x
         for x in "${md5_bad[@]}"; do v_reason+=$'\n'"      $x"; done
@@ -711,8 +892,31 @@ download_cmd() { # download_cmd <key> <dir> [name...]: download.sh's argv
     (($#)) && dl_argv+=(--features "$(csv "$@")")
     return 0
 }
-manual_steps() { # manual_steps <key> <dir> [name...]
-    local key=$1
+# manual_steps <key> <dir> [name...]: how to get the SDK yourself, by the
+# descriptor's obtain= (ngc: the NGC steps and download.sh; browser: the
+# browser steps for its one file).
+manual_steps() {
+    local key=$1 dir=$2
+    if [[ ${D[$key:obtain]} == browser ]]; then
+        local file licence=${D[$key:licence]:-"NVIDIA's licence"}
+        file=$(download_name "$key")
+        cat <<EOF
+  To get the ${D[$key:title]} ${pkgver[$key]}, do this yourself in a browser (this script never does it for you):
+    1. Join the NVIDIA Developer Program, or log in to your NVIDIA Developer Program account.
+    2. Open ${pkgurl[$key]}
+    3. Read the $licence and select "Accept & Download" for
+       $file (version ${pkgver[$key]}).
+    4. Save it in $dir (where this script looks), or give its location with
+       --src-$key PATH (the file, the directory holding it, or its extracted tree).
+EOF
+        if ((dry_run)); then
+            say "  Then run this script again."
+        else
+            say "  Then press Enter below to re-check, or s to skip."
+        fi
+        say "  The steps by hand: $repo/${D[$key:byhand_doc]}"
+        return 0
+    fi
     cat <<EOF
   To get the ${D[$key:title]} ${pkgver[$key]}, do this yourself (this script never does it for you):
     1. Create or log in to your NVIDIA Developer Program account (a plain NGC account is not enough).
@@ -735,11 +939,13 @@ declare -A dl_packaged=()  # per SDK: the features the download holds (what the 
 declare -A dl_present=()   # per SDK: what the download holds, as present_table lines
 dl_argv=()
 src='' src_from=''
-# sdk_src <key>: sets src and src_from: <prefix>_SRC from the environment,
-# else the selection.conf's, else the default directory.
+# sdk_src <key>: sets src and src_from: --src-<key>, else <prefix>_SRC from
+# the environment, else the selection.conf's, else the default location.
 sdk_src() {
     local key=$1 var=${D[$1:env_prefix]}_SRC conf=$repo/${D[$1:package]}/selection.conf
-    if [[ -n ${!var:-} ]]; then
+    if [[ -n ${src_arg[$key]:-} ]]; then
+        src=${src_arg[$key]} src_from="--src-$key"
+    elif [[ -n ${!var:-} ]]; then
         src=${!var} src_from="the environment ($var)"
     elif src=$(conf_src "$key" 2>/dev/null) && [[ -n $src ]]; then
         src_from=$conf
@@ -749,7 +955,12 @@ sdk_src() {
     fi
     return 0
 }
-build_line() { printf '(cd %s && PKGEXT=.pkg.tar makepkg -f)\n' "$(q "$repo/${D[$1:package]}")"; } # build_line <key>
+# build_line <key> [src]: the build command (with <prefix>_SRC=src when given).
+build_line() {
+    local var=''
+    [[ -z ${2:-} ]] || var="${D[$1:env_prefix]}_SRC=$(q "$2") "
+    printf '(cd %s && PKGEXT=.pkg.tar %smakepkg -f)\n' "$(q "$repo/${D[$1:package]}")" "$var"
+}
 # tree_steps <key> <tree> [name...]: an SDK tree is packaged as it is, so
 # download.sh cannot add to it: the way to package more is a download
 # directory of its own, selected instead of the tree, and a rebuild.
@@ -834,7 +1045,17 @@ process() {
     while :; do
         if validate "$key" "$src"; then
             valid=1
-            say "  The download is valid (configure.sh accepts it; $md5_count checksum(s) match)."
+            if [[ -n ${D[$key:checksum_glob]:-} ]]; then
+                say "  The download is valid (configure.sh accepts it; $md5_count checksum(s) match)."
+            else
+                say "  The download is valid (configure.sh accepts it)."
+            fi
+            # A one-file download is selected as the file configure.sh
+            # found, not as the directory that holds it.
+            if [[ -n ${D[$key:download_file]:-} && -n $v_source && $v_source != "$src" ]]; then
+                src=$v_source
+                say "  Found: $src"
+            fi
             missing=()
             for name in "${sel[@]}"; do in_download "$name" || missing+=("$name"); done
             ((${#missing[@]} > 0)) || break
@@ -862,12 +1083,13 @@ process() {
         fi
         if ((v_missing)); then
             say "  No ${D[$key:title]} ${pkgver[$key]} download in $src."
+            [[ -z $v_error ]] || say "  configure.sh says: $v_error"
         else
             say "  The download in $src is not usable: $v_reason"
         fi
         download_cmd "$key" "$src" "${sel[@]}"
         if ((!shown)); then
-            if ((v_missing)); then
+            if ((v_missing)) || [[ ${D[$key:obtain]} != ngc ]]; then
                 manual_steps "$key" "$src" "${sel[@]}"
             else
                 say "  To fetch what is missing again:"
@@ -878,7 +1100,9 @@ process() {
         if ((dry_run)); then
             break
         fi
-        if command -v ngc >/dev/null 2>&1; then
+        if [[ ${D[$key:obtain]} != ngc ]]; then
+            : # downloaded by hand: nothing to run here
+        elif command -v ngc >/dev/null 2>&1; then
             if ask "Run download.sh now (it shows the sizes and asks before downloading)?"; then
                 "${dl_argv[@]}" || warn "download.sh did not finish (see above)"
                 changed=1
@@ -906,29 +1130,35 @@ process() {
 
     # 3. The selection.
     say "  -- 3. Selection (selection.conf)"
-    local cfg_cmd=() cfg=$pkg_dir/${D[$key:configure]}
-    if ((${#archs[@]} > 0)); then
-        cfg_cmd=("$cfg" --src "$src" --archs "$archs_csv" --features all --write)
+    # The options configure.sh takes (configure_select); without a detected
+    # GPU there is no command for an SDK that takes --archs.
+    local cfg_cmd=() cfg_opts=(--src "$src") cfg=$pkg_dir/${D[$key:configure]}
+    takes "$key" archs && cfg_opts+=(--archs "${archs_csv:-sm_<N>}")
+    takes "$key" features && cfg_opts+=(--features all)
+    if ((${#archs[@]} > 0)) || ! takes "$key" archs; then
+        cfg_cmd=("$cfg" "${cfg_opts[@]}" --write)
     fi
+    local kept=0
     if [[ -f $conf ]]; then
+        kept=1
         say "  $conf exists; it is kept unless you replace it:"
         "$cfg" --show 2>&1 | sed 's/^/    /' || true
         if ((${#cfg_cmd[@]} > 0)); then
             if ((dry_run)); then
-                say "  To replace it with the detected architectures:"
+                say "  To replace it$(takes "$key" archs && echo " with the detected architectures"):"
                 show_cmd "$(cmdline "${cfg_cmd[@]}")"
-            elif ask "Replace it with --src $src --archs $archs_csv --features all?"; then
+            elif ask "Replace it with $(cmdline "${cfg_opts[@]}")?"; then
                 "${cfg_cmd[@]}" || {
                     warn "configure.sh failed (see above); the selection.conf is unchanged"
                     state[$key]="stopped (configure.sh failed)"
                     return 1
                 }
-                changed=1
+                changed=1 kept=0
             fi
         fi
     elif ((${#cfg_cmd[@]} == 0)); then
         say "  No selection.conf. Without a detected GPU, write it yourself:"
-        show_cmd "$(cmdline "$cfg" --src "$src" --archs 'sm_<N>' --features all --write)"
+        show_cmd "$(cmdline "$cfg" "${cfg_opts[@]}" --write)"
         state[$key]="stopped (no selection.conf)"
         ((dry_run)) || return 0
     else
@@ -949,10 +1179,32 @@ process() {
         fi
     fi
 
-    # 4. The build.
+    # A kept selection.conf names the source makepkg builds: when it is not
+    # the download validated above, that source is validated and used
+    # instead (for the staleness check below and in makepkg's environment).
+    local rec
+    if ((kept)) && rec=$(conf_src "$key" 2>/dev/null) && [[ -n $rec ]] &&
+        [[ $(realpath -m -- "$rec") != "$(realpath -m -- "$src")" ]]; then
+        say "  The selection.conf records $rec, not $src: the build uses $rec unless you replace the selection.conf."
+        if validate "$key" "$rec"; then
+            say "  $rec is valid (configure.sh accepts it)."
+            src=$rec
+            dl_packaged[$key]=$(present_features | tr '\n' ' ')
+            dl_present[$key]=$v_present
+        else
+            say "  $rec is not usable: $v_reason"
+            say "  Replace the selection.conf with the download above, then run this script again:"
+            show_cmd "$(cmdline "$cfg" "${cfg_opts[@]}" --write)"
+            state[$key]="stopped (the selection.conf's source is not usable)"
+            return 0
+        fi
+    fi
+
+    # 4. The build, with <prefix>_SRC set to the source validated above, so
+    # that a variable inherited from the environment cannot change it.
     say "  -- 4. Build"
-    local build_line build=0 why=''
-    build_line=$(build_line "$key")
+    local build_line build=0 why='' src_var=${D[$key:env_prefix]}_SRC
+    build_line=$(build_line "$key" "$src")
     pkgfile=$(find_pkg "$key")
     # A built package is reused only when it is current: built after the
     # selection.conf and after everything in the download, in an earlier
@@ -962,7 +1214,7 @@ process() {
             why="this run changed the download or the selection"
         elif [[ -e $conf && $conf -nt $pkgfile ]]; then
             why="$conf is newer"
-        elif [[ -d $src && -n $(find -H "$src" -newer "$pkgfile" -print -quit 2>/dev/null) ]]; then
+        elif [[ -e $src && -n $(find -H "$src" -newer "$pkgfile" -print -quit 2>/dev/null) ]]; then
             why="the download in $src has newer files"
         fi
         if [[ -n $why ]]; then
@@ -991,7 +1243,7 @@ process() {
         fi
     fi
     if ((build)); then
-        if ! (cd -- "$pkg_dir" && PKGEXT=.pkg.tar makepkg -f); then
+        if ! (cd -- "$pkg_dir" && export "$src_var=$src" && PKGEXT=.pkg.tar makepkg -f); then
             warn "makepkg failed (see above); nothing was installed"
             state[$key]="stopped (makepkg failed)"
             return 1
@@ -1290,9 +1542,25 @@ done
 # 7. Verify (read-only).
 declare -A row=()
 notes=()
-verify() { # verify <key>: sets row[$key]
-    local key=$1 have envf libpath root corelib d out lib_ok=ok ldd_ok=ok model_ok=ok
-    local P=${D[$key:env_prefix]} f n mdir glob g
+# sys_lib_found <name>: a system library (system_libs) is there: a path
+# check of the library directories (under MAXINE_SETUP_ROOT when it is set,
+# and only that), else the read-only `ldconfig -p`.
+sys_lib_found() {
+    local d
+    for d in /usr/lib /usr/lib64 /lib /lib64; do
+        [[ -e $sys_root$d/$1 ]] && return 0
+    done
+    [[ -z $sys_root ]] && command -v ldconfig >/dev/null 2>&1 || return 1
+    ldconfig -p 2>/dev/null | awk -v n="$1" '$1 == n { f = 1 } END { exit !f }'
+}
+# verify <key>: sets row[$key]. The columns: env (the environment file),
+# libpath (its <prefix>_LIBRARY_PATH: every directory exists; required with a
+# core_lib), ldd (core_lib and the optional_libs present resolve with that
+# path, and the system_libs are there), files (the check_files and the
+# models). A column with nothing to check is "-".
+verify() {
+    local key=$1 have envf libpath root corelib d out lib_ok=ok ldd_ok=ok model_ok=ok lib
+    local P=${D[$key:env_prefix]} f n mdir glob g w ldd_checked=0 files_checked=0
     have=$(installed_version "$key")
     if [[ -z $have ]]; then
         row[$key]=$(printf '%-6s %-32s %-6s %-8s %-6s %s' "$key" "not installed" - - - -)
@@ -1308,14 +1576,23 @@ verify() { # verify <key>: sets row[$key]
     root=$(env_value "$envf" "${P}_ROOT" || true)
     [[ -n $root ]] || root=$sys_root${D[$key:root]}
     mdir=$(sdk_model_dir "$key")
-    local -a dirs packaged optional_features=() want=("${archs[@]}") pkg_archs features
+    local -a dirs packaged optional_features=() want=("${archs[@]}") pkg_archs features libs=() words
     IFS=, read -r -a packaged <<<"$(env_value "$envf" "${P}_FEATURES" || true)"
     if [[ -n ${D[$key:feature_lib]:-} ]]; then
         read -r -a features <<<"$(catalogue_features "$key")"
         for f in "${features[@]}"; do in_list "$f" "${packaged[@]}" || optional_features+=("$f"); done
     fi
+    # An absent <prefix>_LIBRARY_PATH is the same as an empty one: required
+    # with a core_lib, else nothing to check ("-").
     IFS=: read -r -a dirs <<<"$libpath"
-    ((${#dirs[@]} > 0)) || { lib_ok=MISSING && notes+=("$key: no ${P}_LIBRARY_PATH in $envf"); }
+    if ((${#dirs[@]} == 0)); then
+        if [[ -n ${D[$key:core_lib]:-} ]]; then
+            lib_ok=MISSING
+            notes+=("$key: no ${P}_LIBRARY_PATH in $envf")
+        else
+            lib_ok=-
+        fi
+    fi
     for d in "${dirs[@]}"; do
         [[ -d $d ]] && continue
         local opt=''
@@ -1329,23 +1606,58 @@ verify() { # verify <key>: sets row[$key]
             notes+=("$key: $d (on the library path) does not exist")
         fi
     done
-    corelib=$root/${D[$key:core_lib]}
-    if [[ ! -f $corelib ]]; then
-        ldd_ok=MISSING
-        notes+=("$key: $corelib does not exist")
-    elif ! out=$(LD_LIBRARY_PATH=$libpath ldd "$corelib" 2>&1); then
-        ldd_ok=FAILED
-        notes+=("$key: ldd $corelib failed: $(head -n 1 <<<"$out")")
-    elif grep -q 'not found' <<<"$out"; then
-        ldd_ok=FAILED
-        while IFS= read -r d; do notes+=("$key: ldd $corelib:${d}"); done < <(grep 'not found' <<<"$out")
+    # The libraries: the core library (it must be there) and the optional
+    # ones that are there, each through ldd with the library path.
+    if [[ -n ${D[$key:core_lib]:-} ]]; then
+        ldd_checked=1
+        corelib=$root/${D[$key:core_lib]}
+        if [[ -f $corelib ]]; then
+            libs+=("$corelib")
+        else
+            ldd_ok=MISSING
+            notes+=("$key: $corelib does not exist")
+        fi
     fi
+    read -r -a words <<<"${D[$key:optional_libs]:-}"
+    for g in "${words[@]}"; do
+        while IFS= read -r lib; do
+            [[ -f $lib ]] && libs+=("$lib")
+        done < <(compgen -G "$root/$g" || true)
+    done
+    for lib in "${libs[@]}"; do
+        ldd_checked=1
+        if ! out=$(LD_LIBRARY_PATH=$libpath ldd "$lib" 2>&1); then
+            ldd_ok=FAILED
+            notes+=("$key: ldd $lib failed: $(head -n 1 <<<"$out")")
+        elif grep -q 'not found' <<<"$out"; then
+            ldd_ok=FAILED
+            while IFS= read -r d; do notes+=("$key: ldd $lib:${d}"); done < <(grep 'not found' <<<"$out")
+        fi
+    done
+    read -r -a words <<<"${D[$key:system_libs]:-}"
+    for lib in "${words[@]}"; do
+        ldd_checked=1
+        sys_lib_found "$lib" && continue
+        [[ $ldd_ok == FAILED ]] || ldd_ok=MISSING
+        notes+=("$key: the system library $lib is not found (is the NVIDIA driver, nvidia-utils, installed and current?)")
+    done
+    ((ldd_checked)) || ldd_ok=-
+    # The files the installed tree must hold.
+    read -r -a words <<<"${D[$key:check_files]:-}"
+    for f in "${words[@]}"; do
+        files_checked=1
+        [[ -e $root/$f ]] && continue
+        model_ok=MISSING
+        notes+=("$key: $root/$f does not exist")
+    done
     IFS=, read -r -a pkg_archs <<<"$(env_value "$envf" "${P}_ARCHS" || true)"
-    glob=${D[$key:model_glob]}
+    glob=${D[$key:model_glob]:-}
+    [[ -n $glob ]] && files_checked=1
     # The models: per feature (packaged ones, and the optional ones that are
     # there) when the glob names {feature}, per architecture when it names
     # {arch}; else once, and the packaged architectures must cover the GPU.
     local -a check_features=('')
+    [[ -n $glob ]] || check_features=()
     if [[ $glob == *'{feature}'* ]]; then
         check_features=("${packaged[@]}")
         for f in "${optional_features[@]}"; do [[ -d $mdir/$f ]] && check_features+=("$f"); done
@@ -1381,15 +1693,16 @@ verify() { # verify <key>: sets row[$key]
             done
         fi
     done
+    ((files_checked)) || model_ok=-
     row[$key]=$(printf '%-6s %-32s %-6s %-8s %-6s %s' "$key" "${pkgname[$key]} $have" ok "$lib_ok" "$ldd_ok" "$model_ok")
-    [[ $lib_ok$ldd_ok$model_ok == okokok ]]
+    [[ ($lib_ok == ok || $lib_ok == -) && ($ldd_ok == ok || $ldd_ok == -) && ($model_ok == ok || $model_ok == -) ]]
 }
 say ""
 say "== 7. Check (read-only)"
 for key in "${chosen[@]}"; do
     verify "$key" || failures=$((failures + 1))
 done
-printf '  %-6s %-32s %-6s %-8s %-6s %s\n' SDK package env libpath ldd models
+printf '  %-6s %-32s %-6s %-8s %-6s %s\n' SDK package env libpath ldd files
 for key in "${chosen[@]}"; do
     say "  ${row[$key]}"
 done
@@ -1400,8 +1713,8 @@ for key in "${chosen[@]}"; do
     say "    $key: ${state[$key]:-not processed}"
 done
 say ""
-say "Next steps: load the environment file for one program only and preload the shim on it,"
-say "as $repo/docs/usage.md describes; the checks by hand are in"
+say "Next steps: load an SDK's environment file for one program only (never globally), as its"
+say "documentation describes; the checks by hand are in"
 for key in "${chosen[@]}"; do say "  $repo/${D[$key:check_doc]}"; done
 
 # 8. Undo: printed, never run. The copied features: those of an SDK with a

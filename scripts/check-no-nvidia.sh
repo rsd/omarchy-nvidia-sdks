@@ -23,8 +23,11 @@
 #     archives, PDFs, SDK headers, a VideoFX/, ARSDK/, Audio_Effects_SDK/
 #     or .ngc/ component, an NGC download directory such as
 #     nvvfxgreenscreen_v1.3.0.0_lib_linux/ or afx_denoiser_v3.0.0-lib/, an
-#     SDK's top-level name directly under a recipe directory such as
-#     maxine-afx/features/ or maxine-ar/Changelog.txt);
+#     unpacked Optical Flow SDK directory (Optical_Flow_SDK_<version>/, in
+#     any letter case), an SDK's top-level name directly under a recipe
+#     directory such as maxine-afx/features/, maxine-ar/Changelog.txt or
+#     nvidia-optical-flow/NvOFInterface/ or nvidia-tensorrt/python/, or an
+#     unpacked TensorRT-<version>/ directory);
 #   - it is a submodule (gitlink), or, in --all, a nested repository;
 #   - it is a symbolic link whose target is absolute or leaves the repository;
 #   - its content is larger than 1 MiB, starts with a binary or archive magic
@@ -77,12 +80,13 @@ path_reason() {
     esac
     case $path in
         maxine-vfx/src/* | maxine-vfx/pkg/* | maxine-ar/src/* | maxine-ar/pkg/* | \
-            maxine-afx/src/* | maxine-afx/pkg/*)
+            maxine-afx/src/* | maxine-afx/pkg/* | nvidia-optical-flow/src/* | nvidia-optical-flow/pkg/* | \
+            nvidia-tensorrt/src/* | nvidia-tensorrt/pkg/*)
             echo "makepkg work directory"; return ;;
     esac
 
-    # An SDK unpacked straight into a recipe directory (MAXINE_*_SRC
-    # defaults to it, and a tree there needs no VideoFX/, ARSDK/ or
+    # An SDK unpacked straight into a recipe directory (MAXINE_*_SRC and
+    # NVIDIA_OF_SRC default to it, and a tree there needs no VideoFX/, ARSDK/ or
     # Audio_Effects_SDK/ component): the SDKs' top-level names. The recipe's
     # own files (PKGBUILD, *.sh, README.md, tests/) are none of them; an
     # SDK's README.md is caught by its content.
@@ -95,12 +99,33 @@ path_reason() {
                     echo "SDK tree in the recipe directory (${path%%/*}/${rest%%/*})"; return ;;
             esac
             ;;
+        nvidia-optical-flow/*)
+            # The Optical Flow SDK's top-level directories, and those of the
+            # tree its PKGBUILD installs (/opt/nvidia/optical-flow).
+            rest=${path#*/}
+            case $rest in
+                NvOFInterface/* | NvOFBasicSamples/* | NvOFTracker/* | NvOFFRUC/* | Common/* | \
+                    include/* | fruc/* | samples/* | tracker/* | licenses/* | lib/* | bin/*)
+                    echo "SDK tree in the recipe directory (${path%%/*}/${rest%%/*})"; return ;;
+            esac
+            ;;
+        nvidia-tensorrt/*)
+            # The TensorRT tarball's top-level directories, targets/ among them
+            # (targets/x86_64-linux-gnu/; the recipe's own README.md, tests/
+            # and scripts are none of them).
+            rest=${path#*/}
+            case $rest in
+                include/* | lib/* | bin/* | python/* | samples/* | data/* | doc/* | targets/*)
+                    echo "SDK tree in the recipe directory (${path%%/*}/${rest%%/*})"; return ;;
+            esac
+            ;;
     esac
 
     # NVIDIA SDK file names.
     case $base in
         nvVideoEffects.h | nvCVImage.h | nvCVStatus.h | nvVFX*.h | nvAudioEffects.h | videofx_version.h | \
-            nvAR.h | nvAR_defs.h)
+            nvAR.h | nvAR_defs.h | nvOpticalFlow*.h | NvFRUC.h | NvOFTracker.h | \
+            NvInfer*.h | NvOnnxParser*.h | NvOnnxConfig.h)
             echo "NVIDIA SDK header"; return ;;
         VFXSDK_*) echo "NVIDIA SDK archive"; return ;;
     esac
@@ -132,6 +157,9 @@ path_reason() {
     # shaped <name>_v<digit>..., e.g. nvvfxgreenscreen_v1.3.0.0_lib_linux,
     # ar_sdk_core_v1.2.0.0_linux, afx_denoiser_v3.0.0-lib. The afx_ shape
     # needs its underscore, so the recipe directory maxine-afx/ never matches.
+    # The same loop refuses an unpacked Optical Flow SDK, whose zip
+    # optical_flow_sdk_<version>.zip holds Optical_Flow_SDK_<version>/; a
+    # file named like it (docs/optical_flow_sdk_notes.md) is not refused.
     rest=''
     [[ $path != */* ]] || rest=${path%/*}
     while [[ -n $rest ]]; do
@@ -141,6 +169,14 @@ path_reason() {
                 ar_sdk_core_v[0-9]* | nvar*_v[0-9]* | \
                 maxine_linux_audio_effects_sdk_v[0-9]* | afx_*_v[0-9]*)
                 echo "NGC download directory"; return ;;
+        esac
+        # The Optical Flow SDK's zip unpacked (its top-level directory).
+        case ${component,,} in
+            optical_flow_sdk_*) echo "SDK tree (Optical_Flow_SDK_*/)"; return ;;
+        esac
+        # The TensorRT tarball unpacked (TensorRT-<version>.Linux.../).
+        case $component in
+            TensorRT-*) echo "SDK tree (TensorRT-*/)"; return ;;
         esac
         if [[ $rest == */* ]]; then rest=${rest#*/}; else rest=''; fi
     done

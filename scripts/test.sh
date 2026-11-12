@@ -8,8 +8,9 @@
 # the working tree.
 #
 # maxine-vfx is checked in full. The other packages (maxine-ar, the AR SDK;
-# maxine-afx, the Audio Effects SDK) follow the same layout, and each of
-# their scripts, PKGBUILD and tests/*.sh is checked when it is present.
+# maxine-afx, the Audio Effects SDK; nvidia-optical-flow, the Optical Flow
+# SDK; nvidia-tensorrt, TensorRT) follow the same layout, and each of their
+# scripts, PKGBUILD and tests/*.sh is checked when it is present.
 #
 #   scripts/test.sh                      # shellcheck from PATH
 #   SHELLCHECK=/path/to/shellcheck scripts/test.sh
@@ -63,9 +64,9 @@ scripts=(
     tools/maxine-probe/env.sh
 )
 [[ -f maxine-vfx/download.sh ]] && scripts+=(maxine-vfx/download.sh)
-extra_pkgs=(maxine-ar maxine-afx)
+extra_pkgs=(maxine-ar maxine-afx nvidia-optical-flow nvidia-tensorrt)
 for pkg in "${extra_pkgs[@]}"; do
-    for f in assemble.sh configure.sh selection.sh download.sh \
+    for f in assemble.sh configure.sh selection.sh source.sh download.sh \
         tests/assemble-test.sh tests/configure-test.sh tests/download-test.sh \
         tests/pkgbuild-test.sh; do
         [[ -f $pkg/$f ]] && scripts+=("$pkg/$f")
@@ -104,20 +105,31 @@ run "download.sh tests (fake ngc)" maxine-vfx/tests/download-test.sh
 run "env.sh tests" scripts/tests/env-sh-test.sh
 run "licence guard and hook tests" scripts/tests/check-no-nvidia-test.sh
 run "setup.sh tests (stubbed tools)" scripts/tests/setup-test.sh
-# pkgbuild_test <test>: a makepkg fixture build; exit 77 (a tool it needs,
-# makepkg, fakeroot or bsdtar, is missing) counts as a skip, not a failure.
-pkgbuild_test() {
-    local status=0
-    "$1" || status=$?
-    ((status == 0 || status == 77))
+# run_or_skip <name> <command...>: as run, for a makepkg fixture build or a
+# test that needs bsdtar: exit 77 (a tool it needs, makepkg, fakeroot or
+# bsdtar, is missing) is reported as a skip and is not a failure; any other
+# non-zero exit fails.
+run_or_skip() {
+    local name=$1 status=0
+    shift
+    echo "== $name"
+    "$@" || status=$?
+    if ((status == 0)); then
+        echo "-- ok: $name"
+    elif ((status == 77)); then
+        echo "-- skipped: $name (exit 77: a tool is missing)"
+    else
+        echo "-- FAIL: $name"
+        failed+=("$name")
+    fi
 }
-run "PKGBUILD fixture build" pkgbuild_test scripts/tests/pkgbuild-fixture-test.sh
+run_or_skip "PKGBUILD fixture build" scripts/tests/pkgbuild-fixture-test.sh
 for pkg in "${extra_pkgs[@]}"; do
     [[ -f $pkg/tests/assemble-test.sh ]] && run "$pkg: assemble.sh fixture tests" "$pkg/tests/assemble-test.sh"
     [[ -f $pkg/tests/configure-test.sh ]] &&
-        run "$pkg: configure.sh and selection.conf tests" "$pkg/tests/configure-test.sh"
+        run_or_skip "$pkg: configure.sh and selection.conf tests" "$pkg/tests/configure-test.sh"
     [[ -f $pkg/tests/download-test.sh ]] && run "$pkg: download.sh tests (fake ngc)" "$pkg/tests/download-test.sh"
-    [[ -f $pkg/tests/pkgbuild-test.sh ]] && run "$pkg: PKGBUILD fixture build" pkgbuild_test "$pkg/tests/pkgbuild-test.sh"
+    [[ -f $pkg/tests/pkgbuild-test.sh ]] && run_or_skip "$pkg: PKGBUILD fixture build" "$pkg/tests/pkgbuild-test.sh"
 done
 run "licence guard (--all)" scripts/check-no-nvidia.sh --all
 

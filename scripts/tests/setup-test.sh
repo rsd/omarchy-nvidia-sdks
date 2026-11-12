@@ -9,7 +9,10 @@
 # MAXINE_SETUP_ROOT points /opt and /usr/share at a fake installed tree, and
 # PATH holds only stubs and links to the basic tools, so the real pacman,
 # sudo, makepkg, ngc, nvidia-smi and ldd can never run. The stubs log their
-# arguments to one file; sudo runs only `cp` (to copy the fake features).
+# arguments to one file (makepkg also logs the <PREFIX>_SRC it receives);
+# sudo runs only `cp` (to copy the fake features). One section replaces the
+# Optical Flow and TensorRT stubs with their real configure.sh, run against
+# fake inputs packed with bsdtar (skipped without bsdtar).
 # The fake NVIDIA download_features.sh writes "key ok" or "key missing" in
 # that log, comparing the key it receives with a SHA-256 sum: the test key
 # itself is never written to any file. Every other program setup.sh can
@@ -63,6 +66,121 @@ STUB
     } >"$repo/maxine-$key/download.sh"
     chmod +x "$repo/maxine-$key/download.sh"
 done
+# The Optical Flow SDK: a stub package directory (not the real recipe), whose
+# configure.sh and selection.sh honour the contract of scripts/setup.d/README:
+# configure.sh --src accepts the zip, or a directory holding exactly one, of
+# version 5.0.7, and prints its machine-readable lines; --write records SRC
+# and SHA256; every call is logged.
+of_dir=$repo/nvidia-optical-flow
+mkdir -p "$of_dir"
+cat >"$of_dir/PKGBUILD" <<'EOF'
+pkgname=nvidia-optical-flow-sdk-local
+pkgver=5.0.7
+pkgrel=1
+arch=('x86_64')
+url='https://developer.nvidia.com/opticalflow/download'
+EOF
+cat >"$of_dir/configure.sh" <<'EOF'
+#!/usr/bin/env bash
+[[ -z ${NGC_API_KEY+set} ]] || echo "keyenv configure.sh" >>"$FAKE_CALLS"
+echo "configure.sh $*" >>"$FAKE_CALLS"
+here=$(cd "$(dirname "$0")" && pwd)
+src='' write=0
+while (($#)); do
+    case $1 in
+        --src) src=$2 && shift 2 ;;
+        --write) write=1 && shift ;;
+        --show) cat "$here/selection.conf" && exit 0 ;;
+        *) echo "configure.sh: unknown option $1" >&2 && exit 2 ;;
+    esac
+done
+zip=''
+if [[ -f $src && ${src##*/} == optical_flow_sdk_*.zip ]]; then
+    zip=$src
+elif [[ -d $src ]]; then
+    shopt -s nullglob
+    z=("$src"/optical_flow_sdk_*.zip)
+    ((${#z[@]} < 2)) || { echo "configure.sh: more than one optical_flow_sdk_*.zip in $src" >&2 && exit 1; }
+    zip=${z[0]:-}
+fi
+[[ -n $zip ]] || { echo "configure.sh: no Optical Flow SDK in $src" >&2 && exit 1; }
+v=${zip##*optical_flow_sdk_} v=${v%.zip}
+[[ $v == 5.0.7 ]] || { echo "configure.sh: $zip is version $v; this recipe builds 5.0.7" >&2 && exit 1; }
+sum=$(sha256sum <"$zip") sum=${sum%% *}
+printf 'version %s\nsource %s\nlayout zip\nsha256 %s\nfeatures api fruc\n\n' "$v" "$zip" "$sum"
+echo "The Optical Flow SDK $v, in $zip."
+((write)) && printf 'NVIDIA_OF_SRC=%s\nNVIDIA_OF_SHA256=%s\n' "$zip" "$sum" >"$here/selection.conf"
+exit 0
+EOF
+cat >"$of_dir/selection.sh" <<'EOF'
+# shellcheck shell=bash
+nvidia_of_read_selection() {
+    local line
+    nvidia_of_file_src=''
+    [[ -e $1 ]] || return 0
+    while IFS= read -r line; do
+        [[ $line == NVIDIA_OF_SRC=* ]] && nvidia_of_file_src=${line#*=}
+    done <"$1"
+    return 0
+}
+EOF
+chmod +x "$of_dir/configure.sh"
+# TensorRT: a stub package directory too. configure.sh --src accepts the
+# archive, or a directory holding exactly one, of version 11.4.0.106 (the
+# version is the one in the file name), prints its machine-readable lines;
+# --write records SRC; every call is logged.
+trt_dir=$repo/nvidia-tensorrt
+trt_file=TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst
+mkdir -p "$trt_dir"
+cat >"$trt_dir/PKGBUILD" <<'EOF'
+pkgname=nvidia-tensorrt-sdk-local
+pkgver=11.4.0.106
+pkgrel=1
+arch=('x86_64')
+url='https://developer.nvidia.com/tensorrt/download'
+EOF
+cat >"$trt_dir/configure.sh" <<'EOF'
+#!/usr/bin/env bash
+[[ -z ${NGC_API_KEY+set} ]] || echo "keyenv configure.sh" >>"$FAKE_CALLS"
+echo "configure.sh $*" >>"$FAKE_CALLS"
+here=$(cd "$(dirname "$0")" && pwd)
+src='' write=0
+while (($#)); do
+    case $1 in
+        --src) src=$2 && shift 2 ;;
+        --write) write=1 && shift ;;
+        --show) cat "$here/selection.conf" && exit 0 ;;
+        *) echo "configure.sh: unknown option $1" >&2 && exit 2 ;;
+    esac
+done
+a=''
+if [[ -f $src && ${src##*/} == TensorRT-*.tar.* ]]; then
+    a=$src
+elif [[ -d $src ]]; then
+    shopt -s nullglob
+    z=("$src"/TensorRT-*.tar.*)
+    ((${#z[@]} < 2)) || { echo "configure.sh: more than one TensorRT-*.tar.* in $src" >&2 && exit 1; }
+    a=${z[0]:-}
+fi
+[[ -n $a ]] || { echo "configure.sh: no TensorRT download in $src" >&2 && exit 1; }
+[[ $a == *-11.4.0.106-* ]] || { echo "configure.sh: $a is not version 11.4.0.106" >&2 && exit 1; }
+printf 'version 11.4.0.106\nsource %s\nlayout archive\nsha256 none\nfeatures headers libs\n\n' "$a"
+((write)) && printf 'NVIDIA_TRT_SRC=%s\n' "$a" >"$here/selection.conf"
+exit 0
+EOF
+cat >"$trt_dir/selection.sh" <<'EOF'
+# shellcheck shell=bash
+nvidia_trt_read_selection() {
+    local line
+    nvidia_trt_file_src=''
+    [[ -e $1 ]] || return 0
+    while IFS= read -r line; do
+        [[ $line == NVIDIA_TRT_SRC=* ]] && nvidia_trt_file_src=${line#*=}
+    done <"$1"
+    return 0
+}
+EOF
+chmod +x "$trt_dir/configure.sh"
 setup=$repo/scripts/setup.sh
 pkgbuild_value() { sed -n "s/^$2=//p" "$repo/maxine-$1/PKGBUILD" | head -n 1 | tr -d "'\"()"; }
 afx_name=$(pkgbuild_value afx pkgname)
@@ -120,6 +238,8 @@ EOF
 cat >"$stubs/makepkg" <<'EOF'
 #!/usr/bin/env bash
 echo "makepkg $* (PKGEXT=${PKGEXT:-} in $PWD)" >>"$FAKE_CALLS"
+# The download locations it receives (what the PKGBUILD would build).
+for v in $(compgen -e); do [[ $v != *_SRC ]] || echo "makepkg-env $v=${!v}" >>"$FAKE_CALLS"; done
 v() { sed -n "s/^$1=//p" PKGBUILD | head -n 1 | tr -d "'\"()"; }
 echo "fake package" >"$(v pkgname)-$(v pkgver)-$(v pkgrel)-x86_64.pkg.tar"
 EOF
@@ -289,7 +409,8 @@ check "no selection.conf was written" test ! -e "$repo/maxine-afx/selection.conf
 check "it detects the GPU" says "compute capability 12.0 -> sm_120"
 check "it prints the configure command" \
     says "$repo/maxine-afx/configure.sh --src $afx_dl --archs sm_120 --features all --write"
-check "it prints the build command" says "(cd $repo/maxine-afx && PKGEXT=.pkg.tar makepkg -f)"
+check "it prints the build command, with the source in MAXINE_AFX_SRC" \
+    says "(cd $repo/maxine-afx && PKGEXT=.pkg.tar MAXINE_AFX_SRC=$afx_dl makepkg -f)"
 check "it prints the install command" says "sudo pacman -U $afx_pkg"
 check "it takes the default selection" says "Selected: denoiser-48k, dereverb-48k, dereverb_denoiser-48k, studio_voice-48k"
 check "it prints download.sh for the selected effects not in the download" \
@@ -512,6 +633,340 @@ check "then pacman -U" called "sudo pacman -U $afx_pkg"
 rm -f "$state/pkglist" "$state/owned"
 installed
 
+echo "== the Optical Flow SDK (a browser download)"
+not_installed
+of_name=nvidia-optical-flow-sdk-local
+of_pkg=$of_dir/$of_name-5.0.7-1-x86_64.pkg.tar
+of_url=https://developer.nvidia.com/opticalflow/download
+of_zip=$home/Downloads/optical_flow_sdk_5.0.7.zip
+of_root=$root/opt/nvidia/optical-flow
+no_ngc() { not grep -qi ngc <<<"$out"; } # the output never mentions NGC
+run -- --help
+check "--help lists it as a browser download, with its file" \
+    says "of   Optical Flow SDK 5.0.7: in a browser, optical_flow_sdk_5.0.7.zip from"
+check "--help documents --src-KEY" says "--src-KEY PATH"
+check "--help names NVIDIA_OF_SRC" says NVIDIA_OF_SRC
+check "--help offers no --features-of" not says "--features-of"
+before=$(listing)
+run -- --sdk of --dry-run
+check "a dry run of it passes" passes
+check "it looks in ~/Downloads" says "-- 2. Download: $home/Downloads (from the default directory)"
+check "a missing zip names the Developer Program" says "Join the NVIDIA Developer Program"
+check "it names the download page" says "$of_url"
+check "it names Accept & Download and the licence" says "NVIDIA DesignWorks SDK License and select \"Accept & Download\""
+check "it names the file and the version" says "optical_flow_sdk_5.0.7.zip (version 5.0.7)"
+check "it names where to save it, and --src-of" says "Save it in $home/Downloads"
+check "and --src-of" says "--src-of PATH"
+check "it points at the steps by hand" says "$repo/docs/optical-flow.md#download"
+check "it never mentions NGC (no SDK in question uses it)" no_ngc
+check "it never offers download.sh" not says "download.sh"
+check "it prints the configure command, without --archs or --features" \
+    says "$of_dir/configure.sh --src $home/Downloads --write"
+check "it prints the build command" says "(cd $of_dir && PKGEXT=.pkg.tar NVIDIA_OF_SRC=$home/Downloads makepkg -f)"
+check "it prints the install command" says "sudo pacman -U $of_pkg"
+check "nothing that changes anything ran" nothing_changed
+check "nothing was written" test "$before" == "$(listing)"
+nosmi=$tmp/stubs-nosmi
+mkdir -p "$nosmi"
+cp "$stubs"/* "$nosmi/"
+rm "$nosmi/nvidia-smi"
+run PATH="$nosmi:$sysbin" -- --sdk of --dry-run
+check "without nvidia-smi it passes" passes
+check "no architecture is asked for" not says "configure.sh needs --archs"
+check "the configure command is still printed" says "$of_dir/configure.sh --src $home/Downloads --write"
+run PATH="$nosmi:$sysbin" -- --sdk vfx --dry-run
+check "a Maxine SDK without nvidia-smi still needs --archs" says "configure.sh needs --archs sm_<N> from you"
+answers='\ns\n'
+run -- --sdk of
+check "a skipped browser download is not a failure" passes
+check "Enter re-checks" test "$(grep -c "No Optical Flow SDK 5.0.7 download in $home/Downloads" <<<"$out")" == 2
+check "it says Enter re-checks and s skips" says "Then press Enter below to re-check, or s to skip."
+check "s skipped it" says "Skipped the Optical Flow SDK"
+check "interactively it never mentions NGC" no_ngc
+check "it runs no download.sh and no ngc" not grep -qE '^(download\.sh|ngc) ' "$calls"
+mkdir -p "$tmp/of-old"
+fake "$tmp/of-old/optical_flow_sdk_5.0.6.zip"
+run -- --dry-run --sdk of --src-of "$tmp/of-old"
+check "--src-of is where it looks" says "-- 2. Download: $tmp/of-old (from --src-of)"
+check "a zip of another version is not usable, with configure.sh's reason" \
+    says "is not usable: configure.sh cannot use it: configure.sh: $tmp/of-old/optical_flow_sdk_5.0.6.zip is version 5.0.6"
+check "and the browser steps are shown" says "optical_flow_sdk_5.0.7.zip (version 5.0.7)"
+fake "$of_zip"
+answers='y\ny\nn\n'
+run -- --sdk of
+check "a valid zip: selection yes, build yes, install no passes" passes
+check "the zip is found in ~/Downloads" says "Found: $of_zip"
+check "configure.sh wrote the selection of the zip" called "configure.sh --src $of_zip --write"
+check "the selection.conf names the zip" grep -qx "NVIDIA_OF_SRC=$of_zip" "$of_dir/selection.conf"
+check "makepkg -f ran in the recipe" called "makepkg -f (PKGEXT=.pkg.tar in $of_dir)"
+check "the install command is printed" says "sudo pacman -U $of_pkg"
+check "the declined install ran no sudo" not called sudo
+run -- --dry-run --sdk of
+check "a re-run takes the selection.conf" says "-- 2. Download: $of_zip (from $of_dir/selection.conf)"
+check "and reuses the package" says "Already built: $of_pkg (it is current and reused)."
+run NVIDIA_OF_SRC="$tmp/of-old" -- --dry-run --sdk of --src-of "$of_zip"
+check "--src-of comes before NVIDIA_OF_SRC" says "-- 2. Download: $of_zip (from --src-of)"
+rm -f "$of_dir/selection.conf" "$of_pkg" "$of_zip"
+# An installed tree under the fake root.
+fake "$of_root/include/nvOpticalFlowCuda.h" "$of_root/include/nvOpticalFlowCommon.h" \
+    "$of_root/fruc/lib/libNvOFFRUC.so" "$root/usr/lib/libnvidia-opticalflow.so.1"
+mkdir -p "$root/usr/share/nvidia-optical-flow"
+cat >"$root/usr/share/nvidia-optical-flow/nvidia-optical-flow.env" <<EOF
+NVIDIA_OF_ROOT=$of_root
+NVIDIA_OF_INCLUDE_DIR=$of_root/include
+NVIDIA_OF_LIBRARY_PATH=
+NVIDIA_OF_FEATURES=api fruc
+EOF
+printf '%s\n' "$afx_name $afx_version" "$of_name 5.0.7-1" >"$state/installed"
+run -- --sdk of
+check "installed: it passes" passes
+check "installed: download, build and install are skipped" says "Download, build and install skipped"
+check "installed: nothing changed" nothing_changed
+check "the check passes; an empty library path without a core library is '-'" \
+    grep -qE "^  of +$of_name 5\.0\.7-1 +ok +- +ok +ok$" <<<"$out"
+check "the FRUC library is ldd'd" called "ldd $of_root/fruc/lib/libNvOFFRUC.so"
+check "the undo names the package" grep -qE "^    \\$ sudo pacman -R .*$of_name" <<<"$out"
+check "it points at its check by hand" says "$repo/docs/optical-flow.md#check-the-installation"
+of_env=$root/usr/share/nvidia-optical-flow/nvidia-optical-flow.env
+cp "$of_env" "$tmp/of.env.orig"
+grep -v '^NVIDIA_OF_LIBRARY_PATH=' "$tmp/of.env.orig" >"$of_env"
+run -- --sdk of
+check "without NVIDIA_OF_LIBRARY_PATH (no core library) it passes" passes
+check "and the library path is '-' (nothing to check)" \
+    grep -qE "^  of +$of_name 5\.0\.7-1 +ok +- +ok +ok$" <<<"$out"
+check "with no note about it" not says "no NVIDIA_OF_LIBRARY_PATH"
+mv "$tmp/of.env.orig" "$of_env"
+rm "$of_root/include/nvOpticalFlowCommon.h"
+run -- --sdk of
+check "a missing header fails the check" test "$status" -ne 0
+check "it names the header" says "of: $of_root/include/nvOpticalFlowCommon.h does not exist"
+fake "$of_root/include/nvOpticalFlowCommon.h"
+rm "$root/usr/lib/libnvidia-opticalflow.so.1"
+run -- --sdk of
+check "a missing driver library fails the check" test "$status" -ne 0
+check "it names the library" says "the system library libnvidia-opticalflow.so.1 is not found"
+fake "$root/usr/lib/libnvidia-opticalflow.so.1"
+not_installed
+run -- --dry-run --sdk all
+check "--sdk all passes" passes
+check "--sdk all sets up five SDKs" test "$(grep -cE '^== .*: [a-z-]+-local ' <<<"$out")" == 5
+check "--sdk all skips the placeholder with one line" \
+    test "$(grep -c '^Skipped Maxine Early Access: access required' <<<"$out")" == 1
+check "the fourth is the Optical Flow SDK" says "== Optical Flow SDK: $of_name 5.0.7-1"
+check "with a Maxine SDK the NGC CLI is reported" says "NGC CLI: $stubs/ngc"
+check "the Maxine SDKs still get the NGC steps" says "Run \`ngc config set\` yourself"
+installed
+
+echo "== the source makepkg builds (a selection.conf, --src-KEY and <PREFIX>_SRC)"
+not_installed
+of_old=$tmp/of-src-old/optical_flow_sdk_5.0.7.zip
+of_new=$tmp/of-src-new/optical_flow_sdk_5.0.7.zip
+fake "$of_old" "$of_new"
+echo "the new one" >>"$of_new"
+rm -f "$of_dir/selection.conf" "$of_pkg"
+answers='y\nn\n'
+run -- --sdk of --src-of "$tmp/of-src-old"
+check "the selection.conf records the old zip" grep -qx "NVIDIA_OF_SRC=$of_old" "$of_dir/selection.conf"
+answers='n\ny\nn\n'
+run -- --sdk of --src-of "$of_new"
+check "keeping the selection.conf passes" passes
+check "it says the kept selection.conf's source is built, not --src-of" \
+    says "The selection.conf records $of_old, not $of_new: the build uses $of_old unless you replace the selection.conf."
+check "the recorded source is validated" called "configure.sh --src $of_old"
+check "and said valid" says "$of_old is valid (configure.sh accepts it)."
+check "makepkg gets the recorded source in NVIDIA_OF_SRC" called "makepkg-env NVIDIA_OF_SRC=$of_old"
+check "not the --src-of one" not called "makepkg-env NVIDIA_OF_SRC=$of_new"
+check "the selection.conf is unchanged" grep -qx "NVIDIA_OF_SRC=$of_old" "$of_dir/selection.conf"
+rm -f "$of_pkg"
+answers='n\ny\nn\n'
+run NVIDIA_OF_SRC="$tmp/of-src-new" -- --sdk of
+check "keeping it with NVIDIA_OF_SRC set elsewhere passes" passes
+check "the build uses the recorded source" says "the build uses $of_old"
+check "makepkg gets the recorded source, not the inherited NVIDIA_OF_SRC" called "makepkg-env NVIDIA_OF_SRC=$of_old"
+check "the inherited value does not reach makepkg" not called "makepkg-env NVIDIA_OF_SRC=$tmp/of-src-new"
+# A package current against the recorded source, a newer file at --src-of.
+touch -d '-3 hours' "$of_old"
+touch -d '-2 hours' "$of_dir/selection.conf"
+touch -d '-1 hour' "$of_pkg"
+touch "$of_new"
+run -- --dry-run --sdk of --src-of "$of_new"
+check "staleness is judged on the recorded source" says "Already built: $of_pkg (it is current and reused)."
+check "not on the --src-of one" not says "has newer files"
+check "the build command names the recorded source" \
+    says "(cd $of_dir && PKGEXT=.pkg.tar NVIDIA_OF_SRC=$of_old makepkg -f)"
+answers='y\ny\nn\n'
+run -- --sdk of --src-of "$of_new"
+check "replacing the selection.conf passes" passes
+check "the selection.conf names the new zip" grep -qx "NVIDIA_OF_SRC=$of_new" "$of_dir/selection.conf"
+check "makepkg gets the new zip" called "makepkg-env NVIDIA_OF_SRC=$of_new"
+check "no mismatch is reported" not says "The selection.conf records"
+rm -f "$of_pkg" "$of_new"
+answers='n\n'
+run -- --sdk of --src-of "$of_old"
+check "a kept selection.conf whose source is gone passes" passes
+check "it says its source is not usable" says "$of_new is not usable: $of_new does not exist"
+check "it stops before the build" says "of: stopped (the selection.conf's source is not usable)"
+check "makepkg did not run" not called makepkg
+rm -f "$of_dir/selection.conf"
+answers='y\ny\nn\n'
+run NVIDIA_OF_SRC="$tmp/of-src-new" -- --sdk of --src-of "$of_old"
+check "a new selection with another NVIDIA_OF_SRC inherited passes" passes
+check "makepkg gets the validated source, not the inherited one" called "makepkg-env NVIDIA_OF_SRC=$of_old"
+check "only that one" test "$(grep -c '^makepkg-env NVIDIA_OF_SRC=' "$calls")" == 1
+rm -rf "$of_dir/selection.conf" "$of_pkg" "$tmp/of-src-old" "$tmp/of-src-new"
+
+echo "== a configure.sh refusal in a directory without the download file"
+mv "$of_dir/configure.sh" "$tmp/of-configure.orig"
+cat >"$of_dir/configure.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "configure.sh $*" >>"$FAKE_CALLS"
+echo "a report line on stdout"
+echo "configure.sh: cannot read $2: Permission denied" >&2
+echo "a second error line" >&2
+exit 1
+EOF
+chmod +x "$of_dir/configure.sh"
+mkdir -p "$tmp/of-empty"
+run -- --dry-run --sdk of --src-of "$tmp/of-empty"
+check "it passes" passes
+check "it is reported as a missing download" says "No Optical Flow SDK 5.0.7 download in $tmp/of-empty."
+check "with configure.sh's first error line" \
+    says "configure.sh says: configure.sh: cannot read $tmp/of-empty: Permission denied"
+check "only the first one" not says "a second error line"
+before_steps() { # the reason comes before the browser steps
+    local a b
+    a=$(grep -n -m 1 -F "configure.sh says:" <<<"$out" | cut -d: -f1)
+    b=$(grep -n -m 1 -F "Join the NVIDIA Developer Program" <<<"$out" | cut -d: -f1)
+    [[ -n $a && -n $b ]] && ((a < b))
+}
+check "before the browser steps" before_steps
+mv "$tmp/of-configure.orig" "$of_dir/configure.sh"
+rmdir "$tmp/of-empty"
+
+echo "== TensorRT (a browser download)"
+not_installed
+trt_name=nvidia-tensorrt-sdk-local
+trt_pkg=$trt_dir/$trt_name-11.4.0.106-1-x86_64.pkg.tar
+trt_arc=$home/Downloads/$trt_file
+trt_root=$root/opt/nvidia/tensorrt
+run -- --help
+check "--help lists it as a browser download with its file" \
+    says "trt  TensorRT 11.4.0.106: in a browser, $trt_file from"
+run -- --sdk trt --dry-run
+check "a dry run passes" passes
+check "it names the archive and the version" says "$trt_file (version 11.4.0.106)"
+check "it names the licence" says "NVIDIA TensorRT Software License Agreement"
+check "it names the download page" says "https://developer.nvidia.com/tensorrt/download"
+check "it points at its steps by hand" says "$repo/docs/tensorrt.md#download"
+check "it never mentions NGC" no_ngc
+check "it prints the configure command, without --archs" \
+    says "$trt_dir/configure.sh --src $home/Downloads --write"
+check "nothing that changes anything ran" nothing_changed
+fake "$trt_arc"
+answers='y\ny\nn\n'
+run -- --sdk trt
+check "a valid archive: selection yes, build yes, install no passes" passes
+check "the archive is found" says "Found: $trt_arc"
+check "configure.sh wrote the selection" called "configure.sh --src $trt_arc --write"
+check "makepkg ran in the recipe" called "makepkg -f (PKGEXT=.pkg.tar in $trt_dir)"
+check "the install command is printed" says "sudo pacman -U $trt_pkg"
+check "the declined install ran no sudo" not called sudo
+rm -f "$trt_dir/selection.conf"
+rm -f "$trt_pkg"
+rm -f "$trt_arc"
+fake "$trt_root/include/NvInfer.h" "$trt_root/include/NvInferVersion.h" \
+    "$trt_root/lib/pkgconfig/nvidia-tensorrt.pc" "$trt_root/lib/libnvinfer.so"
+mkdir -p "$root/usr/share/nvidia-tensorrt"
+cat >"$root/usr/share/nvidia-tensorrt/nvidia-tensorrt.env" <<EOF
+NVIDIA_TRT_ROOT=$trt_root
+NVIDIA_TRT_LIBRARY_PATH=$trt_root/lib
+NVIDIA_TRT_FEATURES=headers libs
+EOF
+printf '%s\n' "$afx_name $afx_version" "$trt_name 11.4.0.106-1" >"$state/installed"
+run -- --sdk trt
+check "installed: it passes" passes
+check "the check passes" grep -qE "^  trt +$trt_name 11\.4\.0\.106-1 +ok +ok +ok +ok$" <<<"$out"
+check "libnvinfer is ldd'd" called "ldd $trt_root/lib/libnvinfer.so"
+check "it points at its check by hand" says "$repo/docs/tensorrt.md#check-the-installation"
+rm "$trt_root/include/NvInferVersion.h"
+run -- --sdk trt
+check "a missing check file fails" test "$status" -ne 0
+check "it names the file" says "trt: $trt_root/include/NvInferVersion.h does not exist"
+fake "$trt_root/include/NvInferVersion.h"
+trt_env=$root/usr/share/nvidia-tensorrt/nvidia-tensorrt.env
+cp "$trt_env" "$tmp/trt.env.orig"
+grep -v '^NVIDIA_TRT_LIBRARY_PATH=' "$tmp/trt.env.orig" >"$trt_env"
+run -- --sdk trt
+check "with a core library, no NVIDIA_TRT_LIBRARY_PATH fails the check" test "$status" -ne 0
+check "the library path is MISSING" grep -qE "^  trt +$trt_name 11\.4\.0\.106-1 +ok +MISSING " <<<"$out"
+check "it says why" says "trt: no NVIDIA_TRT_LIBRARY_PATH in $trt_env"
+mv "$tmp/trt.env.orig" "$trt_env"
+installed
+
+echo "== the placeholder (Maxine Early Access)"
+not_installed
+before=$(listing)
+run -- --help
+check "--help lists it as access required" says "Maxine Early Access: access required, not installable yet"
+check "--help names its request page" says "request: https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/collections/maxine_linux_ar_sdk_collection_ea"
+check "--help lists it among the --sdk keys" says "maxineea"
+run -- --sdk maxineea
+check "choosing it passes" passes
+check "it prints the request steps" says "How to request access:"
+check "it names the collection" says "nvidia/maxine/maxine_linux_ar_sdk_collection_ea"
+check "it names the licence" says "NVIDIA Software Evaluation License Agreement"
+check "it names the request page" says "Request page: https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/collections/maxine_linux_ar_sdk_collection_ea"
+check "it names the AI for Media Early Access Program" says "https://developer.nvidia.com/maxine-early-access"
+check "it says it becomes active once the item names are supplied" says "becomes active once the item names are supplied"
+check "it runs no tool at all" test ! -s "$calls"
+check "it has no preflight" not says "== 1. Preflight"
+check "it wrote nothing" test "$before" == "$(listing)"
+run -- --sdk maxineea --src-maxineea /tmp
+check "it takes no --src-KEY" test "$status" == 2
+check "--src-maxineea is refused as an unknown option" says "unknown option --src-maxineea (no SDK 'maxineea')"
+check "and nothing ran" test ! -s "$calls"
+run -- --sdk maxineea --features-maxineea all
+check "it takes no --features-KEY" test "$status" == 2
+check "--features-maxineea is refused as an unknown option" says "unknown option --features-maxineea (no SDK 'maxineea')"
+check "and nothing ran for it" test ! -s "$calls"
+run -- --dry-run --sdk all
+check "--sdk all skips it with a line" says "Skipped Maxine Early Access: access required, not installable yet"
+check "and prints no request steps" not says "How to request access:"
+answers='n\nn\nn\nn\nn\ny\n'
+run --
+check "interactively it is asked, with the SDKs" says "Show how to request access to Maxine Early Access (access required, not installable yet)?"
+check "yes prints the steps" says "How to request access:"
+check "and nothing was run" nothing_changed
+ph_conf=$repo/scripts/setup.d/60-maxine-ea.conf
+mv "$ph_conf" "$tmp/60-ea.orig"
+sed '/^request_steps=/d' "$tmp/60-ea.orig" >"$ph_conf"
+run -- --help
+check "a placeholder without request_steps is refused" says "60-maxine-ea.conf: a placeholder needs request_steps="
+sed '/^request_url=/d' "$tmp/60-ea.orig" >"$ph_conf"
+run -- --help
+check "a placeholder without request_url is refused" says "60-maxine-ea.conf: a placeholder needs request_url="
+{ cat "$tmp/60-ea.orig" && echo "package=nvidia-zzz"; } >"$ph_conf"
+run -- --help
+check "a placeholder with an installable key is refused" says "60-maxine-ea.conf: a placeholder has no package="
+mv "$tmp/60-ea.orig" "$ph_conf"
+installed
+mv "$repo/scripts/setup.d/40-of.conf" "$tmp/40-of.conf.orig"
+sed '/^download_file=/d' "$tmp/40-of.conf.orig" >"$repo/scripts/setup.d/40-of.conf"
+run -- --help
+check "obtain=browser without download_file is refused" says "40-of.conf: obtain=browser needs download_file="
+{ cat "$tmp/40-of.conf.orig" && echo "catalogue=download.sh"; } >"$repo/scripts/setup.d/40-of.conf"
+run -- --help
+check "a catalogue without NGC is refused" says "40-of.conf: catalogue needs obtain=ngc"
+sed 's/^configure_select=.*/configure_select=archs bogus/' "$tmp/40-of.conf.orig" >"$repo/scripts/setup.d/40-of.conf"
+run -- --help
+check "an unknown configure_select is refused" says "40-of.conf: configure_select must be archs, features, both, or none"
+sed 's/^configure_select=.*/configure_select=both/' "$tmp/40-of.conf.orig" >"$repo/scripts/setup.d/40-of.conf"
+run -- --dry-run --sdk of
+check "configure_select=both is accepted" passes
+check "both means --archs and --features" \
+    says "$of_dir/configure.sh --src $home/Downloads --archs sm_120 --features all --write"
+mv "$tmp/40-of.conf.orig" "$repo/scripts/setup.d/40-of.conf"
+
 echo "== the check"
 printf '#!/usr/bin/env bash\nprintf "\\tlibcudart.so.12 => not found\\n"\n' >"$stubs/ldd"
 run -- --sdk afx
@@ -637,6 +1092,91 @@ check "an interactive run does not offer download.sh for a tree" not says "Run d
 check "and runs none" not called download.sh
 rm -f "$repo/maxine-vfx/selection.conf"
 
+echo "== the real configure.sh of the Optical Flow SDK and of TensorRT, on fake downloads"
+# The recipes' own configure.sh (with their helper scripts and PKGBUILD,
+# copied into the temporary repository in place of the stubs) against tiny
+# fake inputs packed with bsdtar: setup.sh must read their "source" lines
+# and record the file they found. The fake TensorRT archive's SHA-256 is
+# pinned in the copied PKGBUILD, as nvidia-tensorrt/tests/configure-test.sh
+# does. The layout line is read too, but only matters with optional
+# downloads, which neither SDK has.
+if ! real_bsdtar=$(command -v bsdtar); then
+    echo "skipped: bsdtar not found (the end-to-end cases of the real configure.sh need it)"
+else
+    not_installed
+    e2e_bin=$tmp/stubs-e2e
+    mkdir -p "$e2e_bin"
+    cp "$stubs"/* "$e2e_bin/"
+    for tool in cut readlink; do
+        # shellcheck disable=SC2016 # the wrapper's own text, expanded when it runs
+        printf '#!%s\n[[ -z ${NGC_API_KEY+set} ]] || echo "keyenv %s" >>"${FAKE_CALLS:-/dev/null}"\nexec %q "$@"\n' \
+            "$bash_bin" "$tool" "$(command -v "$tool")" >"$e2e_bin/$tool"
+    done
+    # shellcheck disable=SC2016 # the wrapper's own text, expanded when it runs
+    printf '#!%s\n[[ -z ${NGC_API_KEY+set} ]] || echo "keyenv bsdtar" >>"${FAKE_CALLS:-/dev/null}"\nexec %q "$@"\n' \
+        "$bash_bin" "$real_bsdtar" >"$e2e_bin/bsdtar"
+    chmod +x "$e2e_bin"/*
+    mv "$of_dir" "$tmp/of-stub-recipe"
+    mv "$trt_dir" "$tmp/trt-stub-recipe"
+    mkdir -p "$of_dir" "$trt_dir"
+    cp "$top/nvidia-optical-flow/configure.sh" "$top/nvidia-optical-flow/selection.sh" \
+        "$top/nvidia-optical-flow/assemble.sh" "$top/nvidia-optical-flow/PKGBUILD" "$of_dir/"
+    cp "$top/nvidia-tensorrt/configure.sh" "$top/nvidia-tensorrt/selection.sh" \
+        "$top/nvidia-tensorrt/source.sh" "$top/nvidia-tensorrt/PKGBUILD" "$trt_dir/"
+    e2e=$tmp/e2e
+    # The Optical Flow SDK: its documented top-level names, zipped.
+    d=$e2e/of-stage/Optical_Flow_SDK_5.0.7
+    fake "$d/NvOFInterface/nvOpticalFlowCommon.h" "$d/NvOFInterface/nvOpticalFlowCuda.h" \
+        "$d/NvOFBasicSamples/AppOFCuda/AppOFCuda.cpp" "$d/NvOFTracker/inc/NvOFTracker.h" \
+        "$d/NvOFFRUC/Interface/NvFRUC.h" "$d/NvOFFRUC/NvOFFRUCSample/bin/ubuntu/libNvFRUC.so"
+    mkdir -p "$e2e/of-dl" "$e2e/of-old"
+    (cd "$e2e/of-stage" && "$real_bsdtar" -a -cf "$e2e/of-dl/optical_flow_sdk_5.0.7.zip" -- *)
+    e2e_zip=$(realpath "$e2e/of-dl/optical_flow_sdk_5.0.7.zip")
+    e2e_zip_sum=$(sha256sum <"$e2e_zip") e2e_zip_sum=${e2e_zip_sum%% *}
+    run PATH="$e2e_bin:$sysbin" -- --dry-run --sdk of --src-of "$e2e/of-dl"
+    check "of: the real configure.sh accepts the fake zip" passes
+    check "of: setup.sh reads its source line" says "Found: $e2e_zip"
+    check "of: the configure command names the zip" says "$of_dir/configure.sh --src $e2e_zip --write"
+    answers='y\nn\n'
+    run PATH="$e2e_bin:$sysbin" -- --sdk of --src-of "$e2e/of-dl"
+    check "of: writing the selection passes" passes
+    check "of: the selection.conf records the zip" grep -qx "NVIDIA_OF_SRC=$e2e_zip" "$of_dir/selection.conf"
+    check "of: and its SHA-256" grep -qx "SHA256=$e2e_zip_sum" "$of_dir/selection.conf"
+    rm -f "$of_dir/selection.conf"
+    cp "$e2e_zip" "$e2e/of-old/optical_flow_sdk_5.0.6.zip"
+    run PATH="$e2e_bin:$sysbin" -- --dry-run --sdk of --src-of "$e2e/of-old"
+    check "of: a zip of another version is not usable" says "The download in $e2e/of-old is not usable: configure.sh cannot use it:"
+    # TensorRT: a fake tree with its version header, packed as the archive.
+    d=$e2e/trt-stage/TensorRT-11.4.0.106
+    mkdir -p "$d/include"
+    {
+        printf '#define TRT_%s_ENTERPRISE %s\n' MAJOR 11 MINOR 4 PATCH 0 BUILD 106
+        printf '#define NV_TENSORRT_%s TRT_%s_ENTERPRISE\n' MAJOR MAJOR MINOR MINOR PATCH PATCH BUILD BUILD
+    } >"$d/include/NvInferVersion.h"
+    fake "$d/include/NvInfer.h" "$d/include/NvOnnxParser.h" "$d/lib/libnvinfer.so.11.4.0" \
+        "$d/lib/libnvinfer_plugin.so.11.4.0" "$d/lib/libnvonnxparser.so.11.4.0"
+    ln -s libnvinfer.so.11.4.0 "$d/lib/libnvinfer.so"
+    mkdir -p "$e2e/trt-dl"
+    "$real_bsdtar" --zstd -cf "$e2e/trt-dl/$trt_file" -C "$e2e/trt-stage" TensorRT-11.4.0.106
+    e2e_arc=$(realpath "$e2e/trt-dl/$trt_file")
+    e2e_arc_sum=$(sha256sum <"$e2e_arc") e2e_arc_sum=${e2e_arc_sum%% *}
+    sed -i "s/^_trt_sha256=.*/_trt_sha256=$e2e_arc_sum/" "$trt_dir/PKGBUILD"
+    run PATH="$e2e_bin:$sysbin" -- --dry-run --sdk trt --src-trt "$e2e/trt-dl"
+    check "trt: the real configure.sh accepts the fake archive" passes
+    check "trt: setup.sh reads its source line" says "Found: $e2e_arc"
+    check "trt: the configure command names the archive" says "$trt_dir/configure.sh --src $e2e_arc --write"
+    answers='y\nn\n'
+    run PATH="$e2e_bin:$sysbin" -- --sdk trt --src-trt "$e2e/trt-dl"
+    check "trt: writing the selection passes" passes
+    check "trt: the selection.conf records the archive" grep -qx "NVIDIA_TRT_SRC=$e2e_arc" "$trt_dir/selection.conf"
+    check "trt: and its SHA-256" grep -qx "NVIDIA_TRT_SHA256=$e2e_arc_sum" "$trt_dir/selection.conf"
+    check "no program got a key" keyenv_none
+    rm -rf "$of_dir" "$trt_dir" "$e2e"
+    mv "$tmp/of-stub-recipe" "$of_dir"
+    mv "$tmp/trt-stub-recipe" "$trt_dir"
+    installed
+fi
+
 echo "== a descriptor with post_script but no feature_lib"
 sed '/^feature_lib=/d' "$repo/scripts/setup.d/30-afx.conf" >"$tmp/30-afx.conf"
 mv "$repo/scripts/setup.d/30-afx.conf" "$tmp/30-afx.conf.orig"
@@ -646,9 +1186,9 @@ check "it is refused when read" test "$status" -ne 0
 check "with a clear message" says "30-afx.conf: post_script needs feature_lib="
 mv "$tmp/30-afx.conf.orig" "$repo/scripts/setup.d/30-afx.conf"
 
-echo "== a fourth SDK, from its descriptor alone"
+echo "== a further SDK, from its descriptor alone"
 cat >"$repo/scripts/setup.d/40-zzz.conf" <<'EOF'
-# a fake fourth SDK
+# a fake further SDK
 key=zzz
 title=Zzz SDK
 package=maxine-zzz

@@ -1,0 +1,249 @@
+# Maintainer: Raul Dias
+#
+# A local Arch package of NVIDIA TensorRT, built from the user's OWN
+# download, so that several projects on one machine (e.g. an ONNX Runtime
+# build with the TensorRT execution provider) share one installation. For
+# personal use: each user accepts NVIDIA's TensorRT Software License
+# Agreement and downloads the archive from NVIDIA themselves (README.md).
+# This repository holds only the recipe. The built package contains NVIDIA
+# software: keep it on your own machine and never redistribute it (no
+# repository, no AUR binary, no release, no sharing).
+#
+# The package is built from this working tree (the directory above), not
+# from a git clone, so nothing has to be committed to build it.
+#
+# Build-time input, from the environment variable of that name, else from
+# selection.conf in this directory (written by configure.sh), else the
+# default. prepare() prints the value and where it came from.
+#   NVIDIA_TRT_SRC  an absolute path (default: ~/Downloads): the archive
+#                   (_trt_archive below), a directory holding exactly one
+#                   TensorRT-*.tar.* archive, or an extracted tree (a
+#                   directory whose include/ holds NvInferVersion.h, or that
+#                   holds one such directory). source.sh has the rules.
+# An archive is copied into $srcdir once, and only that copy is read: it is
+# verified against _trt_sha256, its members are checked (no device, fifo or
+# socket, no symbolic link that is absolute or leads out of the tree) and it
+# is extracted with bsdtar into $srcdir (never next to the download or into
+# this repository). An extracted tree has no checksum and is copied. Either
+# way the tree in $srcdir is checked again (the same refusals, the links
+# resolved) and the version in include/NvInferVersion.h must be pkgver.
+# selection.conf is parsed as KEY=value lines by selection.sh, never
+# sourced; it is read in prepare() only, so `makepkg --printsrcinfo` does
+# not depend on it.
+#
+# Build (from nvidia-tensorrt/), e.g.:
+#   ./configure.sh --src ~/Downloads --write
+#   makepkg -f
+#   NVIDIA_TRT_SRC=~/Downloads/TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst makepkg -f
+# The package is several GiB; PKGEXT=.pkg.tar skips a slow compression:
+#   PKGEXT=.pkg.tar makepkg -f
+# Install the result with:  sudo pacman -U nvidia-tensorrt-sdk-local-*.pkg.tar*
+#
+# It installs the TensorRT tree as shipped under /opt/nvidia/tensorrt
+# (include, lib, bin, python, samples, data, doc, and targets/ when the
+# archive ships its files there), a pkg-config file,
+# /opt/nvidia/tensorrt/lib/pkgconfig/nvidia-tensorrt.pc (in
+# targets/x86_64-linux-gnu/lib/pkgconfig when the tree has no lib/), and an
+# environment
+# file, /usr/share/nvidia-tensorrt/nvidia-tensorrt.env, that a consumer
+# loads explicitly. Nothing under /usr/include, /usr/lib or /etc, no
+# ld.so.conf.d entry and no profile.d script: trtexec is not on PATH and
+# the Python wheels are shipped, not installed into site-packages.
+#
+# shellcheck source-path=SCRIPTDIR
+
+pkgname=nvidia-tensorrt-sdk-local
+pkgver=11.4.0.106
+pkgrel=1
+pkgdesc="NVIDIA TensorRT for CUDA 13.4, packaged from the user's own download under /opt/nvidia/tensorrt (personal use, not redistributable)"
+arch=('x86_64')
+url='https://developer.nvidia.com/tensorrt/download'
+license=('LicenseRef-NVIDIA-TensorRT')  # the TensorRT Software License Agreement
+depends=(
+  'cuda>=13.4'    # the CUDA 13 runtime libraries TensorRT 11 for CUDA 13.4 loads,
+  'cuda<14'       # and cudart.pc, which nvidia-tensorrt.pc requires
+  'nvidia-utils'  # libcuda.so.1 (the driver)
+)
+# No provides/conflicts with the AUR's tensorrt: it installs under /usr, this
+# package under /opt/nvidia/tensorrt; no file overlaps, and a package that
+# depends on tensorrt expects the /usr paths (README.md).
+provides=("nvidia-tensorrt-sdk=$pkgver")
+# Keep NVIDIA's files byte-identical.
+options=('!strip' '!debug' 'staticlibs')
+# This repository's working tree; resolved at build time. Nothing is
+# downloaded: TensorRT comes from $NVIDIA_TRT_SRC.
+_repo=$(realpath -- "$startdir/..")
+source=()
+
+# The archive this recipe packages and its SHA-256 (as published in the Arch
+# User Repository's tensorrt recipe; NVIDIA's download page needs a login).
+# configure.sh reads these two lines.
+_trt_archive=TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst
+_trt_sha256=c67c87674cbe7b2337d1c30cb16d48686ab79ecb11bf08cb764b71f4f2bb711b
+
+_root=/opt/nvidia/tensorrt
+
+prepare() {
+  # The source: environment variable > selection.conf > default. The helpers
+  # only define functions; selection.conf is parsed, never sourced.
+  # shellcheck source=selection.sh
+  . "$_repo/nvidia-tensorrt/selection.sh"
+  # shellcheck source=source.sh
+  . "$_repo/nvidia-tensorrt/source.sh"
+  nvidia_trt_resolve "$startdir/selection.conf" "$HOME/Downloads" || return 1
+  echo "TensorRT source:"
+  nvidia_trt_print_resolved
+  trt_locate "$nvidia_trt_src" || return 1
+  echo "  layout $trt_layout: $trt_path"
+  rm -rf -- "$srcdir/tensorrt" "$srcdir/extract" "$srcdir/archive"
+
+  if [[ $trt_layout == archive ]]; then
+    # One private copy is hashed, checked and extracted: a download replaced
+    # between those steps cannot pass the checksum and be extracted instead.
+    local sum name=${trt_path##*/} copy
+    mkdir -- "$srcdir/archive"
+    copy=$srcdir/archive/$name
+    cp --reflink=auto -- "$trt_path" "$copy" || return 1
+    sum=$(trt_sha256 "$copy") || return 1
+    if [[ $sum != "$_trt_sha256" ]]; then
+      if [[ $name == "$_trt_archive" ]]; then
+        echo "$trt_path: SHA-256 mismatch: expected $_trt_sha256, got $sum." \
+          "The file is incomplete or damaged: download it again from $url" >&2
+      else
+        echo "$trt_path is not the archive this recipe packages: expected $_trt_archive" \
+          "(SHA-256 $_trt_sha256), got $name (SHA-256 $sum)" >&2
+      fi
+      return 1
+    fi
+    if [[ -n $nvidia_trt_sha256 && $nvidia_trt_sha256 != "$sum" ]]; then
+      echo "$trt_path changed since configure.sh --write recorded SHA-256 $nvidia_trt_sha256" \
+        "(now $sum): run configure.sh --write again" >&2
+      return 1
+    fi
+    echo "  SHA-256 $sum verified"
+    trt_check_archive "$copy" || return 1
+    # bsdtar refuses absolute paths and .. in the archive.
+    mkdir -- "$srcdir/extract"
+    bsdtar -xf "$copy" -C "$srcdir/extract" || return 1
+    rm -rf -- "$srcdir/archive"
+    trt_locate "$srcdir/extract" || return 1
+    [[ $trt_layout == tree ]] || { echo "the archive holds an archive, not a TensorRT tree" >&2; return 1; }
+    mv -- "$trt_path" "$srcdir/tensorrt"
+    rm -rf -- "$srcdir/extract"
+  else
+    echo "  an extracted tree: no checksum to verify"
+    cp -a --reflink=auto -- "$trt_path" "$srcdir/tensorrt"
+  fi
+  # What is packaged: the copy in $srcdir, whatever the source was checked
+  # as by configure.sh.
+  trt_check_tree "$srcdir/tensorrt" || return 1
+
+  trt_scan tree "$srcdir/tensorrt" || return 1
+  if [[ $trt_version != "$pkgver" ]]; then
+    echo "the source holds TensorRT ${trt_version:-(no version in include/NvInferVersion.h)}," \
+      "but this recipe packages TensorRT $pkgver: download $_trt_archive from $url" >&2
+    return 1
+  fi
+  if ((${#trt_missing[@]} > 0)); then
+    echo "the source is incomplete; missing: ${trt_missing[*]}" >&2
+    return 1
+  fi
+  echo "  TensorRT $trt_version: ${trt_features[*]}"
+}
+
+package() {
+  # The tree as shipped (reflinks where the filesystem allows). fakeroot
+  # makes it root-owned; directories 755, files at least 644.
+  install -d "$pkgdir/opt/nvidia"
+  cp -a --reflink=auto -- "$srcdir/tensorrt" "$pkgdir$_root"
+  chmod -R u+rwX,go+rX,go-w -- "$pkgdir$_root"
+
+  # The library directory: lib/ (a directory, or a link to
+  # targets/x86_64-linux-gnu/lib), else targets/x86_64-linux-gnu/lib.
+  local libdir=$_root/lib librel=lib
+  if [[ ! -d $srcdir/tensorrt/lib && -d $srcdir/tensorrt/targets/x86_64-linux-gnu/lib ]]; then
+    libdir=$_root/targets/x86_64-linux-gnu/lib librel=targets/x86_64-linux-gnu/lib
+  fi
+
+  # pkg-config: `pkg-config --cflags --libs nvidia-tensorrt` with
+  # PKG_CONFIG_PATH=/opt/nvidia/tensorrt/lib/pkgconfig. The RPATH lets a
+  # consumer find the libraries without LD_LIBRARY_PATH. TensorRT's headers
+  # include the CUDA runtime's: Requires: cudart adds Arch cuda's
+  # (/usr/lib/pkgconfig/cudart.pc, /opt/cuda/include).
+  local pc="$pkgdir$libdir/pkgconfig/nvidia-tensorrt.pc"
+  install -d "${pc%/*}"
+  cat >"$pc" <<EOF
+# NVIDIA TensorRT ($pkgname $pkgver-$pkgrel).
+prefix=$_root
+includedir=\${prefix}/include
+libdir=\${prefix}/$librel
+
+Name: nvidia-tensorrt
+Description: NVIDIA TensorRT, from the user's own download
+Version: $pkgver
+Requires: cudart
+Cflags: -I\${includedir}
+Libs: -L\${libdir} -Wl,-rpath,\${libdir} -lnvinfer -lnvinfer_plugin -lnvonnxparser
+EOF
+  chmod 644 "$pc"
+
+  # The environment file: KEY=value lines, no quotes, no expansion, so it
+  # works as a systemd EnvironmentFile= and with `set -a; . file; set +a`.
+  local envfile="$pkgdir/usr/share/nvidia-tensorrt/nvidia-tensorrt.env"
+  install -d "${envfile%/*}"
+  cat >"$envfile" <<EOF
+# NVIDIA TensorRT ($pkgname $pkgver-$pkgrel).
+# Usage: /usr/share/doc/$pkgname/README.md
+# Load it for one program or one build only (systemd EnvironmentFile=, or
+#   set -a; . /usr/share/nvidia-tensorrt/nvidia-tensorrt.env; set +a
+# in a script); never from a login profile. A program you build is better
+# linked with an RPATH to $_root/lib (pkg-config nvidia-tensorrt
+# adds it) than run with LD_LIBRARY_PATH. A program that loads several
+# such files gets the last file's LD_LIBRARY_PATH: it builds
+# LD_LIBRARY_PATH itself from the NVIDIA_*_LIBRARY_PATH and
+# MAXINE_*_LIBRARY_PATH keys. TENSORRT_HOME is the root, as ONNX Runtime's
+# build (--tensorrt_home) and other CMake projects expect.
+# NVIDIA_TRT_PKG_CONFIG_PATH is the directory to add to PKG_CONFIG_PATH.
+NVIDIA_TRT_ROOT=$_root
+NVIDIA_TRT_INCLUDE_DIR=$_root/include
+NVIDIA_TRT_LIBRARY_PATH=$libdir
+LD_LIBRARY_PATH=$libdir
+NVIDIA_TRT_PKG_CONFIG_PATH=$libdir/pkgconfig
+TENSORRT_HOME=$_root
+NVIDIA_TRT_VERSION=$pkgver
+EOF
+  chmod 644 "$envfile"
+  # Every key as specified, and no quote, $, space or other non-KEY=value
+  # line outside the comments; every directory it names is in the package.
+  if ! { grep -qx "NVIDIA_TRT_ROOT=$_root" "$envfile" &&
+    grep -qx "NVIDIA_TRT_INCLUDE_DIR=$_root/include" "$envfile" &&
+    grep -qx "NVIDIA_TRT_LIBRARY_PATH=$libdir" "$envfile" &&
+    grep -qx "LD_LIBRARY_PATH=$libdir" "$envfile" &&
+    grep -qx "NVIDIA_TRT_PKG_CONFIG_PATH=$libdir/pkgconfig" "$envfile" &&
+    grep -qx "TENSORRT_HOME=$_root" "$envfile" &&
+    grep -qx "NVIDIA_TRT_VERSION=$pkgver" "$envfile" &&
+    ! grep -v '^#' "$envfile" | grep -q -e '["'\''$ ]' -e '^LD_PRELOAD=' -e '^[^=]*$'; }; then
+    echo 'nvidia-tensorrt.env: the generated file is not as expected' >&2
+    return 1
+  fi
+  local dir
+  for dir in "$_root/include" "$libdir" "$libdir/pkgconfig"; do
+    [[ -d $pkgdir$dir ]] || { echo "nvidia-tensorrt.env: $dir is not in the package" >&2; return 1; }
+  done
+
+  # Licences: links to TensorRT's own licence and notice files (those
+  # present, at the top of the tree or in doc/). The links point into
+  # $_root, which does not exist at build time.
+  local licdir="$pkgdir/usr/share/licenses/$pkgname" lic rel
+  install -d "$licdir"
+  while IFS= read -r -d '' lic; do
+    rel=${lic#"$srcdir/tensorrt/"}
+    [[ ! -e $licdir/${lic##*/} && ! -L $licdir/${lic##*/} ]] || continue
+    ln -s "$_root/$rel" "$licdir/${lic##*/}"
+  done < <(find "$srcdir/tensorrt" -maxdepth 1 -type f \( -iname '*licen[cs]e*' -o -iname '*sla*' \
+    -o -iname '*acknowledg*' -o -iname '*notice*' \) -print0 | sort -z
+    [[ ! -d $srcdir/tensorrt/doc ]] || find "$srcdir/tensorrt/doc" -maxdepth 2 -type f \
+      \( -iname '*licen[cs]e*' -o -iname '*sla*' -o -iname '*acknowledg*' -o -iname '*notice*' \) -print0 | sort -z)
+
+  install -Dm644 "$_repo/nvidia-tensorrt/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

@@ -11,6 +11,10 @@ maxine-ar/src/
 maxine-ar/pkg/
 maxine-afx/src/
 maxine-afx/pkg/
+nvidia-optical-flow/src/
+nvidia-optical-flow/pkg/
+nvidia-tensorrt/src/
+nvidia-tensorrt/pkg/
 *.pkg.tar*
 
 # Libraries, TensorRT models and their checksum sidecars (*.trtpkg.md5).
@@ -44,6 +48,12 @@ nvar*_v*/
 maxine_linux_audio_effects_sdk_v*/
 afx_*_v*/
 nvafx*_v*/
+# The Optical Flow SDK's zip unpacked (NVIDIA_OF_SRC defaults to
+# nvidia-optical-flow/; the zip itself is *.zip above).
+Optical_Flow_SDK_*/
+optical_flow_sdk_*/
+# The TensorRT tarball unpacked (its top-level directory).
+TensorRT-*/
 # An SDK tree unpacked straight into a recipe directory: the SDKs' top-level
 # names (the recipe's own README.md stays visible; the guard knows an SDK's
 # README by its content).
@@ -83,6 +93,29 @@ nvafx*_v*/
 /maxine-afx/docs/
 /maxine-afx/version.h
 /maxine-afx/Changelog.txt
+# The Optical Flow SDK's top-level names, and those of the tree its PKGBUILD
+# installs.
+/nvidia-optical-flow/NvOFInterface/
+/nvidia-optical-flow/NvOFBasicSamples/
+/nvidia-optical-flow/NvOFTracker/
+/nvidia-optical-flow/NvOFFRUC/
+/nvidia-optical-flow/Common/
+/nvidia-optical-flow/include/
+/nvidia-optical-flow/fruc/
+/nvidia-optical-flow/samples/
+/nvidia-optical-flow/tracker/
+/nvidia-optical-flow/licenses/
+/nvidia-optical-flow/lib/
+/nvidia-optical-flow/bin/
+# The TensorRT tarball's top-level names, unpacked into its recipe directory.
+/nvidia-tensorrt/include/
+/nvidia-tensorrt/lib/
+/nvidia-tensorrt/bin/
+/nvidia-tensorrt/python/
+/nvidia-tensorrt/samples/
+/nvidia-tensorrt/data/
+/nvidia-tensorrt/doc/
+/nvidia-tensorrt/targets/
 
 # The local build selection written by each package's configure.sh: it
 # holds a path on this machine.
@@ -92,6 +125,10 @@ maxine-ar/selection.conf
 maxine-ar/.selection.conf.*
 maxine-afx/selection.conf
 maxine-afx/.selection.conf.*
+nvidia-optical-flow/selection.conf
+nvidia-optical-flow/.selection.conf.*
+nvidia-tensorrt/selection.conf
+nvidia-tensorrt/.selection.conf.*
 
 # NGC CLI configuration (holds the API key) and download logs.
 .ngc/

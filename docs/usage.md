@@ -2,7 +2,7 @@
 
 This page is for programs and projects that load a Maxine SDK installed by one of three packages: `maxine-vfx-sdk-local` (Video Effects), `maxine-ar-sdk-local` (AR) or `maxine-afx-sdk-local` (Audio Effects). Each package installs this page as `/usr/share/doc/<package>/usage.md`. The sections from "What the package installs" to "Troubleshooting" describe the Video Effects package. The [Maxine AR SDK](#maxine-ar-sdk) and [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) sections describe the other two, which follow the same pattern: an environment file you load for one program, a shim you preload on that program, and no global setting. [Why nothing is global](#why-nothing-is-global) says why.
 
-For building the packages, see [download.md](download.md), [../maxine-vfx/README.md](../maxine-vfx/README.md), [../maxine-ar/README.md](../maxine-ar/README.md) and [../maxine-afx/README.md](../maxine-afx/README.md). For supported GPUs and architectures, see [gpu-support.md](gpu-support.md).
+For the Optical Flow SDK and TensorRT packages, see [Other packages](#other-packages-optical-flow-and-tensorrt). For building the packages, see [download.md](download.md), [../maxine-vfx/README.md](../maxine-vfx/README.md), [../maxine-ar/README.md](../maxine-ar/README.md) and [../maxine-afx/README.md](../maxine-afx/README.md). For supported GPUs and architectures, see [gpu-support.md](gpu-support.md).
 
 The package contains NVIDIA software and is for your own machine only; see the "Licence and personal use" section of the [README](../README.md). NVIDIA does not support this configuration (Arch, distributions the SDK does not list, client-side use).
 
@@ -337,6 +337,17 @@ ls /opt/nvidia/maxine/afx/features/denoiser/models/sm_120
 ```
 
 With the environment file applied, the `ldd` command prints nothing. Use a feature and architecture your package holds in the second command.
+
+## Other packages: Optical Flow and TensorRT
+
+Two further packages are not Maxine SDKs and have their own pages: `nvidia-optical-flow-sdk-local` (the NVIDIA Optical Flow SDK, [optical-flow.md](optical-flow.md)) and `nvidia-tensorrt-sdk-local` (TensorRT, [tensorrt.md](tensorrt.md)). They follow the same rules as the three above: each installs under its own directory in `/opt/nvidia/`, has an environment file you load for one program or one build, and sets nothing globally. They need no shim.
+
+| Package | Directory | Environment file | Library path key |
+|---|---|---|---|
+| `nvidia-optical-flow-sdk-local` | `/opt/nvidia/optical-flow` | `/usr/share/nvidia-optical-flow/nvidia-optical-flow.env` | `NVIDIA_OF_LIBRARY_PATH` (absent when FRUC is not packaged) |
+| `nvidia-tensorrt-sdk-local` | `/opt/nvidia/tensorrt` | `/usr/share/nvidia-tensorrt/nvidia-tensorrt.env` | `NVIDIA_TRT_LIBRARY_PATH` |
+
+A program that combines these with a Maxine SDK loads several environment files, and each sets `LD_LIBRARY_PATH`, so the last one wins. Build `LD_LIBRARY_PATH` yourself from the `*_LIBRARY_PATH` keys (`MAXINE_VFX_LIBRARY_PATH`, `MAXINE_AR_LIBRARY_PATH`, `MAXINE_AFX_LIBRARY_PATH`, `NVIDIA_OF_LIBRARY_PATH`, `NVIDIA_TRT_LIBRARY_PATH`), skipping the keys that a file does not set, and set it after loading the files. In a systemd unit, write the joined value in an `Environment=LD_LIBRARY_PATH=...` line after the `EnvironmentFile=` lines. For TensorRT, prefer an RPATH to a library path: the Maxine SDKs bundle TensorRT 10, and this package's TensorRT 11 must not be put in front of theirs.
 
 ## Why nothing is global
 
