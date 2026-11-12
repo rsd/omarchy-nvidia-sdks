@@ -1,28 +1,23 @@
 # omarchy-nvidia-sdks
 
-Personal-use recipes that turn your own NVIDIA SDK download into local Arch Linux packages, so that several projects share one install instead of each carrying its own copy. The first recipes are for the NVIDIA Maxine SDKs; the repository is not limited to Maxine, and also holds recipes for the NVIDIA Optical Flow SDK and for TensorRT.
+## What this is for
 
-## Licence and personal use
+This repository packages NVIDIA SDKs that you download yourself from NVIDIA as local Arch Linux packages, so that several projects share one install instead of each carrying its own copy. The SDKs are the NVIDIA Maxine Video Effects SDK, the Maxine AR SDK and the Maxine Audio Effects SDK, the NVIDIA Optical Flow SDK and TensorRT. The recipes are not limited to Maxine.
 
-Read this before using anything here.
+**Who it is for.** Users of Arch Linux or Omarchy who want applications and projects to find these SDKs in standard places: each package installs under `/opt/nvidia/` and comes with an environment file that a program loads, and none sets anything globally.
 
-- **You accept NVIDIA's licence and you download the SDK yourself**, with your own account: from NVIDIA NGC for the Maxine SDKs, and in a browser from NVIDIA's developer site for the Optical Flow SDK and TensorRT. The recipes only automate what happens after that.
-- **This repository holds only recipes**: PKGBUILDs, scripts, documentation and the source of a small compatibility shim. **Nothing from NVIDIA is committed**: no SDK files, libraries, headers, models (`*.trtpkg`), tarballs or licence PDFs. The guard `scripts/check-no-nvidia.sh` enforces this: it refuses NVIDIA's file types (libraries, models and their `*.trtpkg.*` checksum sidecars, archives, PDFs, SDK headers, including those of the Optical Flow SDK and TensorRT), an unpacked SDK tree (`VideoFX/`, `ARSDK/`, `Audio_Effects_SDK/`, `Optical_Flow_SDK_*/`, `TensorRT-*/`), an NGC download directory, an SDK's top-level names (`lib/`, `include/`, `features/`, `external/`, `share/`, `samples/`, `licenses/`, `nvafx/`, `bin/`, `docs/`, `version.h`, `Changelog.txt`) placed directly inside a recipe directory (and the matching top-level names of the Optical Flow SDK and of the TensorRT archive inside their recipe directories), and file content that carries an NVIDIA marker. Enable its hooks in your clone with:
+**What it is not.** It does not redistribute anything from NVIDIA. You download each SDK from NVIDIA with your own account, under NVIDIA's licence, and this repository holds only the build recipes: PKGBUILDs, scripts, documentation and the source of a small compatibility shim. The licence terms, and what you may and may not do with a built package, are in [Licences and caveats](#licences-and-caveats) at the end of this page. Read them before you use anything here.
 
-  ```bash
-  git config core.hooksPath .githooks
-  ```
+**The quickest start.** Run the guided script, with `--dry-run` first to see what it would do without changing anything:
 
-  The hooks are `pre-commit`, `pre-merge-commit` and `pre-push`. `pre-push` checks the commits being pushed with the guard's `--range` mode. `git commit --no-verify` bypasses them (as does `git push --no-verify` for `pre-push`), so the guard is a safety net and not an access control. `scripts/check-no-nvidia.sh --all` checks the working tree, not the history: a file committed earlier stays in the history until you rewrite it.
+```bash
+scripts/setup.sh --dry-run
+scripts/setup.sh
+```
 
-- **The built package contains NVIDIA software and is for your own machine only.** Never upload it to a package repository, to the AUR as a binary, to a release page, or share it in any other way. The NVIDIA Software License Agreement for the Maxine SDKs (8.5) forbids redistribution, including in "publicly accessible software repositories". The Optical Flow SDK is under the NVIDIA DesignWorks SDK License, which does not allow redistributing the SDK stand-alone, and TensorRT is under the TensorRT Software License Agreement, which allows installing and using it internally and does not allow redistributing it, except its runtime libraries as part of an application. Neither package is that: read the licence you accept for each SDK.
-- **Do not publish benchmark results** (the Maxine licence, 8.9), and do not reverse engineer the software.
-- **NVIDIA does not support this configuration.** Arch Linux and other distributions the SDK does not list, packages built by a third-party recipe, and client-side use of an SDK documented for servers, are outside what NVIDIA supports. Expect no vendor support.
-- This is not legal advice. Read the licence you accept.
+You still log in, accept NVIDIA's licence and download the SDK yourself; the script prints the steps and waits. See [Quick start](#quick-start) and [docs/setup.md](docs/setup.md).
 
-The licence of this repository's own content is stated at the end of this page.
-
-## Packages
+## What is included
 
 | Directory | Package | Contents |
 |---|---|---|
@@ -181,7 +176,26 @@ scripts/test.sh
 ```
 
 This runs every check in the repository, for all five packages: shellcheck over every script, the syntax and metadata of each PKGBUILD, the fixture tests of each package's `assemble.sh`, `configure.sh` and `download.sh` (the last against a fake `ngc`), the `configure.sh` and `selection.conf` tests of the Optical Flow and TensorRT packages on tiny fake zips, archives and trees, a `makepkg` build of each PKGBUILD against fake SDK files, the shim test, the tests of `scripts/setup.sh` (with stubbed `pacman`, `sudo`, `makepkg`, `ngc` and `nvidia-smi`, so nothing is installed), and the licence guard and its hooks, then the guard over the whole tree. It needs `shellcheck`. A GPU is not required, it uses no network and it needs no NVIDIA download. The `makepkg` fixture builds, and the Optical Flow and TensorRT `configure.sh` tests where they need `bsdtar`, are skipped when `makepkg`, `fakeroot` or `bsdtar` is missing.
+## Licences and caveats
 
-## Licence of this repository's content
+### Licence and personal use
+
+Read this before using anything here.
+
+- **You accept NVIDIA's licence and you download the SDK yourself**, with your own account: from NVIDIA NGC for the Maxine SDKs, and in a browser from NVIDIA's developer site for the Optical Flow SDK and TensorRT. The recipes only automate what happens after that.
+- **This repository holds only recipes**: PKGBUILDs, scripts, documentation and the source of a small compatibility shim. **Nothing from NVIDIA is committed**: no SDK files, libraries, headers, models (`*.trtpkg`), tarballs or licence PDFs. The guard `scripts/check-no-nvidia.sh` enforces this: it refuses NVIDIA's file types (libraries, models and their `*.trtpkg.*` checksum sidecars, archives, PDFs, SDK headers, including those of the Optical Flow SDK and TensorRT), an unpacked SDK tree (`VideoFX/`, `ARSDK/`, `Audio_Effects_SDK/`, `Optical_Flow_SDK_*/`, `TensorRT-*/`), an NGC download directory, an SDK's top-level names (`lib/`, `include/`, `features/`, `external/`, `share/`, `samples/`, `licenses/`, `nvafx/`, `bin/`, `docs/`, `version.h`, `Changelog.txt`) placed directly inside a recipe directory (and the matching top-level names of the Optical Flow SDK and of the TensorRT archive inside their recipe directories), and file content that carries an NVIDIA marker. Enable its hooks in your clone with:
+
+  ```bash
+  git config core.hooksPath .githooks
+  ```
+
+  The hooks are `pre-commit`, `pre-merge-commit` and `pre-push`. `pre-push` checks the commits being pushed with the guard's `--range` mode. `git commit --no-verify` bypasses them (as does `git push --no-verify` for `pre-push`), so the guard is a safety net and not an access control. `scripts/check-no-nvidia.sh --all` checks the working tree, not the history: a file committed earlier stays in the history until you rewrite it.
+
+- **The built package contains NVIDIA software and is for your own machine only.** Never upload it to a package repository, to the AUR as a binary, to a release page, or share it in any other way. The NVIDIA Software License Agreement for the Maxine SDKs (8.5) forbids redistribution, including in "publicly accessible software repositories". The Optical Flow SDK is under the NVIDIA DesignWorks SDK License, which does not allow redistributing the SDK stand-alone, and TensorRT is under the TensorRT Software License Agreement, which allows installing and using it internally and does not allow redistributing it, except its runtime libraries as part of an application. Neither package is that: read the licence you accept for each SDK.
+- **Do not publish benchmark results** (the Maxine licence, 8.9), and do not reverse engineer the software.
+- **NVIDIA does not support this configuration.** Arch Linux and other distributions the SDK does not list, packages built by a third-party recipe, and client-side use of an SDK documented for servers, are outside what NVIDIA supports. Expect no vendor support.
+- This is not legal advice. Read the licence you accept.
+
+### Licence of this repository's content
 
 MIT OR Apache-2.0, at your option: see [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE). This covers only the content of this repository. It does not apply to any NVIDIA software you download or to a package built from it.
