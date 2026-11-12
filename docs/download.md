@@ -2,7 +2,7 @@
 
 The `maxine-vfx-sdk-local`, `maxine-ar-sdk-local` and `maxine-afx-sdk-local` packages are built from files you download yourself from NVIDIA NGC after accepting NVIDIA's licence. This repository does not contain, and cannot provide, any of those files. This page is a step-by-step guide for the Video Effects SDK 1.3.0.0 (Linux). The [Maxine AR SDK](#maxine-ar-sdk) 1.2.0.0 and the [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) 3.0.0 have their own sections further down; they use the same prerequisites and the same NGC CLI. Until those sections, the commands and names on this page are the Video Effects ones (`maxine-vfx/download.sh`).
 
-There are two ways to download:
+There are two ways to download. [`scripts/setup.sh`](../scripts/setup.sh), described in [setup.md](setup.md), walks through both and the build and installation as well.
 
 - **Automated:** [`maxine-vfx/download.sh`](../maxine-vfx/download.sh) detects your GPU, shows what it would download and how big it is, asks for confirmation, and fetches only what is missing. See [Download with one command](#download-with-one-command).
 - **Manual:** the same `ngc` commands, written out. See [Download by hand](#download-by-hand).
@@ -68,14 +68,14 @@ ngc --version
 ngc config set
 ```
 
-Run this yourself and answer the prompts interactively. The key is entered here and nowhere else: it never goes into a script, a log or your shell history.
+Run this yourself and answer the prompts interactively. The key is entered here and nowhere else: it never goes into a script, a log or your shell history. The one exception is the optional Audio Effects post-install step of `scripts/setup.sh`, which can take the key for NVIDIA's `download_features.sh` (see [setup.md](setup.md#the-key)); you can decline it.
 
 - API key: paste the `nvapi-...` key from step 2.
 - CLI output format: `ascii`.
 - org: the organisation of the account that has the Developer Program access. The prompt lists the organisations your key can see.
 - team and ace: press Enter to accept the defaults.
 
-The NGC CLI stores the key in `~/.ngc/config`. Nothing in this repository reads that file, and the scripts never ask for, pass on or print the key.
+The NGC CLI stores the key in `~/.ngc/config`. Nothing in this repository reads that file. `download.sh` and `configure.sh` never ask for, pass on or print the key. `scripts/setup.sh` asks for a key only for the optional Audio Effects post-install step, passes it only to NVIDIA's script in that script's environment, and never prints or stores it; it still never reads `~/.ngc` ([setup.md](setup.md#the-key)).
 
 Check access (read-only):
 

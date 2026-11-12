@@ -47,10 +47,12 @@ scripts=(
     .githooks/pre-merge-commit
     .githooks/pre-push
     scripts/check-no-nvidia.sh
+    scripts/setup.sh
     scripts/test.sh
     scripts/tests/check-no-nvidia-test.sh
     scripts/tests/env-sh-test.sh
     scripts/tests/pkgbuild-fixture-test.sh
+    scripts/tests/setup-test.sh
     maxine-vfx/assemble.sh
     maxine-vfx/configure.sh
     maxine-vfx/selection.sh
@@ -101,6 +103,7 @@ run "configure.sh and selection.conf tests" maxine-vfx/tests/configure-test.sh
 run "download.sh tests (fake ngc)" maxine-vfx/tests/download-test.sh
 run "env.sh tests" scripts/tests/env-sh-test.sh
 run "licence guard and hook tests" scripts/tests/check-no-nvidia-test.sh
+run "setup.sh tests (stubbed tools)" scripts/tests/setup-test.sh
 # pkgbuild_test <test>: a makepkg fixture build; exit 77 (a tool it needs,
 # makepkg, fakeroot or bsdtar, is missing) counts as a skip, not a failure.
 pkgbuild_test() {

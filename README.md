@@ -34,7 +34,18 @@ The three packages follow the same pattern: you download the SDK from NGC, you c
 
 ## Quick start
 
-You need an NVIDIA Developer Program account, the NGC CLI, and `ngc config set` run by yourself. [docs/download.md](docs/download.md#prerequisites) has the steps. Then:
+You need an NVIDIA Developer Program account, the NGC CLI, and `ngc config set` run by yourself. [docs/download.md](docs/download.md#prerequisites) has the steps.
+
+**Guided.** `scripts/setup.sh` takes you through the whole procedure for any of the three SDKs: checks of your machine, detection of your NGC download, the optional features, `configure.sh`, `makepkg`, the installation, a check of the result and the commands to undo it. It asks before every step that changes anything (the default answer is No) and prints each command it runs. Look first, then run it:
+
+```bash
+scripts/setup.sh --dry-run
+scripts/setup.sh
+```
+
+Login, licence acceptance and `ngc config set` stay with you. The steps, the options and what the script does with `sudo` are in [docs/setup.md](docs/setup.md).
+
+**Manual.** The same procedure, one command per step:
 
 1. Download the SDK files from NGC with one command:
 
@@ -53,7 +64,7 @@ You need an NVIDIA Developer Program account, the NGC CLI, and `ngc config set` 
 
    `configure.sh` saves the choice in `maxine-vfx/selection.conf` (see [Choose your features and GPU](#choose-your-features-and-gpu)), and `makepkg` reads it. Without `selection.conf` you can pass the same choice in the environment: `MAXINE_VFX_SRC=~/Downloads/maxine MAXINE_VFX_ARCHS=sm_120 MAXINE_VFX_FEATURES=all makepkg -f`.
 
-3. Install the package yourself: `sudo pacman -U maxine-vfx-sdk-local-*.pkg.tar*`. Nothing in this repository runs `sudo` or installs anything.
+3. Install the package yourself: `sudo pacman -U maxine-vfx-sdk-local-*.pkg.tar*`. Only `scripts/setup.sh` runs `sudo` or installs anything, and it shows each command and asks before running it; `download.sh`, `configure.sh` and the PKGBUILDs never do.
 4. Use it from your programs, following [docs/usage.md](docs/usage.md).
 
 The build options (`MAXINE_VFX_SRC`, `MAXINE_VFX_ARCHS`, `MAXINE_VFX_FEATURES`) are described in [maxine-vfx/README.md](maxine-vfx/README.md). If you prefer to type the `ngc` commands yourself, [docs/download.md](docs/download.md#download-by-hand) lists them in full.
@@ -119,7 +130,7 @@ maxine-afx/configure.sh --src ~/Downloads/maxine/afx-sdk --archs sm_120 --featur
 cd maxine-afx && PKGEXT=.pkg.tar makepkg -f
 ```
 
-Then install with `sudo pacman -U` yourself and use the package as described in [docs/usage.md](docs/usage.md). The build inputs are `MAXINE_AR_SRC`, `MAXINE_AR_ARCHS` and `MAXINE_AR_FEATURES`, and `MAXINE_AFX_SRC`, `MAXINE_AFX_ARCHS` and `MAXINE_AFX_FEATURES`. The Audio Effects package has no sample-rate input: every sample rate present in your download is packaged.
+Then install with `sudo pacman -U` yourself (or let `scripts/setup.sh` do these steps, after a confirmation) and use the package as described in [docs/usage.md](docs/usage.md). The build inputs are `MAXINE_AR_SRC`, `MAXINE_AR_ARCHS` and `MAXINE_AR_FEATURES`, and `MAXINE_AFX_SRC`, `MAXINE_AFX_ARCHS` and `MAXINE_AFX_FEATURES`. The Audio Effects package has no sample-rate input: every sample rate present in your download is packaged.
 
 | Package | Features | NGC names |
 |---|---|---|
@@ -136,8 +147,11 @@ LICENSE-MIT, LICENSE-APACHE
 .gitignore
 .githooks/                        pre-commit, pre-merge-commit, pre-push: run the licence guard
 scripts/check-no-nvidia.sh        licence guard: refuses NVIDIA files, SDK trees, NGC download directories
+scripts/setup.sh                  guided setup: preflight, download detection, configure, build, install, check, undo
+scripts/setup.d/                  one descriptor per SDK for setup.sh (format in scripts/setup.d/README)
 scripts/test.sh                   runs every check of this repository
-scripts/tests/                    tests of the guard, of env.sh and of a PKGBUILD fixture build
+scripts/tests/                    tests of the guard, of env.sh, of setup.sh and of a PKGBUILD fixture build
+docs/setup.md                     the guided setup: steps, options, key handling, the sudo commands, undo
 docs/download.md                  downloading the SDKs from NGC: the one-command path, the manual steps, sizes, troubleshooting, for the three SDKs
 docs/usage.md                     how a program uses each installed package: environment file, shim, models
 docs/gpu-support.md               supported GPUs, architectures and how to fetch their models
@@ -160,7 +174,7 @@ tools/maxine-probe/               a small program that checks the SDK loads
 scripts/test.sh
 ```
 
-This runs every check in the repository, for all three packages: shellcheck over every script, the syntax and metadata of each PKGBUILD, the fixture tests of each package's `assemble.sh`, `configure.sh` and `download.sh` (the last against a fake `ngc`), a `makepkg` build of each PKGBUILD against fake SDK files, the shim test, and the licence guard and its hooks, then the guard over the whole tree. It needs `shellcheck`. A GPU is not required, it uses no network and it needs no NVIDIA download. The `makepkg` fixture builds are skipped when `makepkg`, `fakeroot` or `bsdtar` is missing.
+This runs every check in the repository, for all three packages: shellcheck over every script, the syntax and metadata of each PKGBUILD, the fixture tests of each package's `assemble.sh`, `configure.sh` and `download.sh` (the last against a fake `ngc`), a `makepkg` build of each PKGBUILD against fake SDK files, the shim test, the tests of `scripts/setup.sh` (with stubbed `pacman`, `sudo`, `makepkg`, `ngc` and `nvidia-smi`, so nothing is installed), and the licence guard and its hooks, then the guard over the whole tree. It needs `shellcheck`. A GPU is not required, it uses no network and it needs no NVIDIA download. The `makepkg` fixture builds are skipped when `makepkg`, `fakeroot` or `bsdtar` is missing.
 
 ## Licence of this repository's content
 

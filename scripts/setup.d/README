@@ -1,0 +1,55 @@
+SDK descriptors of scripts/setup.sh, one file per SDK, read in the order of
+their file names (NN-<key>.conf). setup.sh PARSES them as KEY=value text; it
+never sources or runs them. Adding an SDK means adding one descriptor here and
+its package directory (with PKGBUILD, configure.sh, selection.sh and,
+optionally, download.sh); setup.sh has no per-SDK code.
+
+Format: blank lines, comment lines (# first), and KEY=value lines; a value is
+the rest of the line, taken literally (no quotes, no $, no backtick, no
+control character). An unknown key or a duplicate key is an error. Paths of
+the installed tree are absolute (setup.sh prefixes them with
+MAXINE_SETUP_ROOT); a default_src or post_out beginning with ~/ is under
+$HOME; package-relative and root-relative paths have no leading /.
+
+Required:
+  key           short name: --sdk KEY, --features-KEY (a-z, 0-9)
+  title         the SDK's name in messages
+  package       the package directory at the top of the repository; its
+                PKGBUILD gives pkgname, pkgver, pkgrel, url (the catalogue
+                page) and arch, read as text
+  default_src   the default download directory
+  configure     the package's configure.sh: `configure --src DIR` (read-only)
+                validates a download and lists what it holds
+  checksum_glob the checksum files of a download (each one names the file
+                beside it without its last extension)
+  byhand_doc    the manual-download instructions (docs/<file>#<anchor>)
+  check_doc     the installation check by hand (docs/<file>#<anchor>)
+  root          the installed SDK root
+  env_file      the installed environment file
+  env_prefix    the prefix of its keys (<prefix>_ROOT, _LIBRARY_PATH,
+                _ARCHS, _FEATURES; <prefix>_SRC is the download directory
+                variable; lower case, the prefix of selection.sh's
+                <prefix>_read_selection and <prefix>_file_src)
+  core_lib      the core library, relative to root, for the ldd check
+  model_dir     the model directory relative to root (or <prefix>_<model_dir_var>)
+  model_glob    the models below it; {feature} and {arch} (sm_<N>) expand
+Optional:
+  model_dir_var the env file key suffix that overrides model_dir
+  feature_lib   a feature's library directory below model_dir, beginning
+                with {feature} (the feature's own directory, the unit that is
+                copied in or reported as not owned by pacman); required
+                with post_script
+  catalogue     the package's download.sh: its optional downloads are read
+                from its array literals (as text) named by
+  catalogue_features      the arrays of the names, in order
+  catalogue_early_access  the array of the Early Access names
+  catalogue_what          the associative array of one-line descriptions
+                          (by name, else by the part before the first -)
+  catalogue_default       the array of the default selection
+  post_script   a script in model_dir that adds features after the install
+                (gets NGC_API_KEY in its environment, never on its argv)
+  post_args     its arguments; {list} (the effects, comma separated) and
+                {out} (post_out) expand
+  post_out      the directory it downloads into (required with post_script):
+                each run downloads into a new directory below it, and only
+                the requested features' directories are copied from there
