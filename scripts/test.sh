@@ -2,10 +2,10 @@
 # Runs every check of this repository that needs no GPU, no network and no
 # NVIDIA download: shellcheck, the PKGBUILDs' syntax and metadata, the shim
 # test, the fixture tests (assemble.sh, configure.sh and the selection.conf
-# parser, download.sh against a fake ngc, env.sh, the licence guard and its
-# hooks, makepkg builds of the PKGBUILDs against a fake SDK tree) and the
-# licence guard over the whole tree. Build output goes to mktemp, never into
-# the working tree.
+# parser, download.sh against a fake ngc, check-ngc.sh against a fake ngc
+# and curl, env.sh, the licence guard and its hooks, makepkg builds of the
+# PKGBUILDs against a fake SDK tree) and the licence guard over the whole
+# tree. Build output goes to mktemp, never into the working tree.
 #
 # maxine-vfx is checked in full. The other packages (maxine-ar, the AR SDK;
 # maxine-afx, the Audio Effects SDK; nvidia-optical-flow, the Optical Flow
@@ -47,9 +47,11 @@ scripts=(
     .githooks/pre-commit
     .githooks/pre-merge-commit
     .githooks/pre-push
+    scripts/check-ngc.sh
     scripts/check-no-nvidia.sh
     scripts/setup.sh
     scripts/test.sh
+    scripts/tests/check-ngc-test.sh
     scripts/tests/check-no-nvidia-test.sh
     scripts/tests/env-sh-test.sh
     scripts/tests/pkgbuild-fixture-test.sh
@@ -105,6 +107,7 @@ run "download.sh tests (fake ngc)" maxine-vfx/tests/download-test.sh
 run "env.sh tests" scripts/tests/env-sh-test.sh
 run "licence guard and hook tests" scripts/tests/check-no-nvidia-test.sh
 run "setup.sh tests (stubbed tools)" scripts/tests/setup-test.sh
+run "check-ngc.sh tests (stubbed ngc and curl)" scripts/tests/check-ngc-test.sh
 # run_or_skip <name> <command...>: as run, for a makepkg fixture build or a
 # test that needs bsdtar: exit 77 (a tool it needs, makepkg, fakeroot or
 # bsdtar, is missing) is reported as a skip and is not a failure; any other
