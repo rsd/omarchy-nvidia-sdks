@@ -83,7 +83,51 @@ Check access (read-only):
 ngc registry resource info nvidia/maxine/vfx_sdk_core:1.3.0.0_linux
 ```
 
-This prints the details of the SDK core. If it fails, see [Troubleshooting](#troubleshooting).
+This prints the details of the SDK core. If it fails, see [Troubleshooting](#troubleshooting). `scripts/check-ngc.sh` checks this and more in one run: see [Check your NGC credentials](#check-your-ngc-credentials).
+
+## Check your NGC credentials
+
+`scripts/check-ngc.sh` checks, read-only, that NGC accepts your key and that your account may download what you intend to. It changes nothing, downloads no SDK file and never reads `~/.ngc` itself. It prints one line per check (OK, FAIL or SKIP) and a hint after each FAIL.
+
+```bash
+scripts/check-ngc.sh                    # the NGC CLI's key, Maxine access, the Early Access models
+scripts/check-ngc.sh --key --no-cli     # only a key you type at the prompt
+scripts/check-ngc.sh --model nvidia/maxine/afx_speaker_focus:3.0.0-lib
+```
+
+Without options it checks the NGC CLI you configured in [step 4](#4-configure-the-ngc-cli-manual):
+
+1. that `ngc` is installed (on `PATH`);
+2. that the key configured in it is accepted by NGC (`ngc user who`);
+3. that it can see the Maxine SDK core (`ngc registry resource info`), which needs Maxine access;
+4. that the account is entitled to the Audio Effects SDK's Early Access models (`ngc registry model info --files`).
+
+| Option | Effect |
+|---|---|
+| `--model ORG/TEAM/NAME:VERSION` | Also check access to this model; repeatable |
+| `--key` | Also check a key of your own: `NGC_API_KEY` when it is set, otherwise read from standard input, without echo on a terminal (a pipe works too). A personal key (`nvapi-...`) is checked with a read-only Bearer request to NGC's API, as NVIDIA's `download_features.sh` uses it. Any other (older) key is checked through NGC's token service. Setting `NGC_API_KEY` alone also enables this check |
+| `--no-cli` | Skip the NGC CLI checks and run only the `--key` check |
+| `-h`, `--help` | The options |
+
+Type the key at the prompt of `--key`. Do not write `NGC_API_KEY=... scripts/check-ngc.sh` in a terminal: your shell keeps that line in its history.
+
+**Results.**
+
+| Result | Meaning | Hint |
+|---|---|---|
+| OK | The check passed | |
+| The `ngc` command is not found | The NGC CLI is not installed or not on `PATH` | [Step 3](#3-install-the-ngc-cli) |
+| The CLI has no key configured | `ngc config set` was never run | Run it yourself ([step 4](#4-configure-the-ngc-cli-manual)) |
+| The key is invalid or expired | NGC answers 401 or 403, or for a personal key, 400 | Create a new key with the NGC Catalog service ([step 2](#2-personal-api-key-manual)) and run `ngc config set` |
+| The key is valid, but the account has no access to a model | NGC answers HTTP 402: the account is not entitled to that model (Early Access or an entitlement) | Request access on the model's NGC page; see [HTTP 402](#http-402-the-key-works-the-account-has-no-access) |
+| No access to the Maxine org/team (`nvidia/maxine`) | The account has not been given Maxine access, or the CLI's organisation is not the one that holds it | Accept the terms under Get Access ([step 1](#1-nvidia-account-and-access-manual)) with the account that owns the key, and name that organisation in `ngc config set` |
+| NGC cannot be reached or answered something else | Network error, a timeout or a server error | Check the network and any proxy, then try again |
+
+Exit status: 0 when every check passed, 1 when a check failed, 2 for a usage error.
+
+**The key stays secret.** The script never prints, logs or stores the key or a token. The key is never on a command line, so it is never an argument either (an unknown argument is not shown), and `ngc` never receives it: it is read into an unexported variable, handed to `curl` on its standard input and masked in every message that is printed. `--key` refuses to run under `bash -x` (xtrace), which would print it, and the script switches `allexport` off so that no child process inherits the key.
+
+**What it cannot tell.** The NGC CLI has no dry run for a download. The model check asks for the model's information and file list, which is the closest read-only request, but NGC can answer that for a model whose files are gated. A model can therefore pass the CLI-side check and still answer HTTP 402 when you download it.
 
 ## Download with one command
 
@@ -407,7 +451,7 @@ sudo pacman -U maxine-ar-sdk-local-*.pkg.tar*
 
 ## Maxine Audio Effects SDK
 
-The Audio Effects (AFX) SDK 3.0.0 offers speech effects: noise removal, room echo removal, both together, Studio Voice and audio super resolution. It is a separate NGC download and a separate package, `maxine-afx-sdk-local` (package version 3.0.0.12, the SDK's full version; NGC tags the downloads with the first three parts, `3.0.0`). The prerequisites above apply unchanged. If an item answers `403`, check your access as described in [Troubleshooting](#troubleshooting).
+The Audio Effects (AFX) SDK 3.0.0 offers speech effects: noise removal, room echo removal, both together, Studio Voice and audio super resolution. It is a separate NGC download and a separate package, `maxine-afx-sdk-local` (package version 3.0.0.12, the SDK's full version; NGC tags the downloads with the first three parts, `3.0.0`). The prerequisites above apply unchanged. If an item answers `403`, check your access as described in [Troubleshooting](#troubleshooting); `402` means the account has no access to that one model ([model status](#afx-sdk-model-status)).
 
 ### AFX SDK: download with one command
 
@@ -440,9 +484,21 @@ An effect is named as NVIDIA's `download_features.sh` names it, `<feature>-<rate
 | `dereverb_denoiser` | Noise and room echo removal in one effect | Noise Removal with Room Echo Removal | `16k`, `48k` | `48k` in `broadcast`; both in `all` |
 | `studio_voice` | Studio Voice: high quality and low latency, with a mic profile | Studio Voice | `16k`, `48k` | `48k` in `broadcast`; both in `all` |
 | `superres` | Audio super resolution: raises the sample rate | none | `8k_to_16k`, `16k_to_48k` | `all` |
-| `speaker_focus` | Keeps the main speaker (Early Access) | none | `16k`, `48k` | only when named in `--features` |
+| `speaker_focus` | Keeps the main speaker (Early Access, by request only: see [model status](#afx-sdk-model-status)) | none | `16k`, `48k` | only when named in `--features` |
 
 The 16 kHz variants, audio super resolution and speaker focus are optional extra downloads: fetch them with `--preset all` or `--features`, or with the manual commands below, into the same directory, then run `maxine-afx/configure.sh` again and rebuild. The package holds every sample rate present in your download for the features you select; there is no rate setting, so leave a rate out of the download to leave it out of the package.
+
+### AFX SDK: model status
+
+NGC's "Linux Audio Effects SDK" collection (NVIDIA AI Enterprise / NVIDIA Developer Program) lists eight models. The SDK resource is `nvidia/maxine/maxine_linux_audio_effects_sdk` 3.0.0. A model's versions are `3.0.0-lib` (the library) and `3.0.0-<rate>-sm<N>` (models per sample rate and architecture, for example `3.0.0-16k_to_48k-sm120` for `afx_superres`).
+
+| Model | Status | Access |
+|---|---|---|
+| `afx_denoiser`, `afx_dereverb`, `afx_dereverb_denoiser`, `afx_studio_voice`, `afx_superres` | Generally available | Your NVIDIA Developer Program access |
+| `afx_speaker_focus` | NVIDIA Maxine Early Access | "Available by request only": request it at <https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/models/afx_speaker_focus>. Without it NGC answers HTTP 402 |
+| `afx_aec` (2.1.0), `afx_voice_font` (2.1.0-sm86) | Deprecated, not in SDK 3.0 | Not used by this recipe |
+
+HTTP 402 means that your key authenticated, but the account is not entitled to that model (Early Access or an entitlement). Retrying cannot help. `maxine-afx/download.sh` skips such an effect without retrying and removes what it had already fetched for it in that run (what was in the directory before the run stays). It lists the skipped effects at the end, with the page where to request access, and leaves them out of the next steps. That alone does not fail the run: the exit status is 0, and 1 only when every chosen effect was refused, so that there is nothing to build. The effects that were not refused are downloaded as usual. `--list` shows "needs access" for such a model. [HTTP 402](#http-402-the-key-works-the-account-has-no-access) has the error text and the fix, and `scripts/check-ngc.sh` can tell you beforehand ([Check your NGC credentials](#check-your-ngc-credentials)).
 
 ### AFX SDK: download by hand
 
@@ -511,7 +567,24 @@ ngc registry model list "nvidia/maxine/nvvfxgreenscreen:*"          # the versio
   - that the key includes the **NGC Catalog** service and has not expired (step 2);
   - that `ngc config set` has the organisation that holds the access (step 4);
   - that the name is right (`download.sh --list` shows the known names). Artifact reduction, for example, is not on NGC for 1.3.0.0.
+- **`402`** is a different case: the key and the Maxine access are fine, and the account has no entitlement to one model. See [HTTP 402](#http-402-the-key-works-the-account-has-no-access).
+- **Not sure which of these it is?** Run `scripts/check-ngc.sh`: it separates a missing key, an invalid or expired key, missing Maxine access and a missing entitlement ([Check your NGC credentials](#check-your-ngc-credentials)).
 - **Only `_woa` or `windows` entries, or an SDK with no Linux libraries.** Wrong tag: `_woa` is Windows on ARM. Use the `_linux` tags shown above.
+
+### HTTP 402: the key works, the account has no access
+
+The error looks like this, from NVIDIA's `features/download_features.sh` (`scripts/setup.sh` runs it after an install) or from the NGC CLI:
+
+```
+Could not download file (status: 402): https://api.ngc.nvidia.com/v2/org/nvidia/team/maxine/models/afx_speaker_focus/3.0.0-lib/files
+```
+
+HTTP 402 is not a key problem: the key authenticated, but the account is not entitled to that model (Early Access or an entitlement). Here the model is `afx_speaker_focus`, which is part of NVIDIA Maxine Early Access and available by request only. Request access at its page, <https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/models/afx_speaker_focus>; the same applies to any other model named in the URL, on its own NGC page.
+
+- `maxine-afx/download.sh` and `scripts/setup.sh` skip that effect, say which one and where to ask, and go on with the others. The rest of the setup is not affected; run the command again once access is granted.
+- You do not need to change the key or the CLI's organisation.
+- Leave speaker focus out until you have access: `--features-afx all` and `--preset all` already do.
+- `scripts/check-ngc.sh` shows the state beforehand. It cannot see every case, because the NGC CLI has no download dry run.
 
 ### The architecture is wrong or has no models
 

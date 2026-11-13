@@ -12,8 +12,14 @@ NVIDIA publishes TensorRT behind a Developer Program login and a licence. Nothin
 
 1. Sign in to the NVIDIA Developer Program, or create an account, at <https://developer.nvidia.com/tensorrt/download>.
 2. Read and accept the TensorRT Software License Agreement (<https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html>), then select "Accept & Download".
-3. Choose TensorRT 11.4, Linux x86_64, the TAR package for CUDA 13.4. The file is `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst`, with SHA-256 `c67c87674cbe7b2337d1c30cb16d48686ab79ecb11bf08cb764b71f4f2bb711b`.
+3. Choose TensorRT 11.4.0.106, Linux x86_64, the TAR package for CUDA 13.4. The file is `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst`, with SHA-256 `c67c87674cbe7b2337d1c30cb16d48686ab79ecb11bf08cb764b71f4f2bb711b` (the checksum published in the AUR's `tensorrt` recipe).
 4. Save it in `~/Downloads` (where `scripts/setup.sh` looks), or anywhere else, and pass its location with `--src-trt PATH` or `NVIDIA_TRT_SRC`. Keep only one `TensorRT-*.tar.*` archive in the directory you name.
+
+Take care to download the right file:
+
+- **The `cuda-13.4` file, not the `cuda-12.9` build of the same version.** The package depends on CUDA 13.4. A `cuda-12.9` archive is refused with "not the archive this recipe packages".
+- **The Linux x86_64 file, not the ARM (aarch64) one.** NVIDIA has so far published TensorRT 11.4.1 for ARM only, so a newer version number on the download page is not necessarily an x86_64 build. This recipe packages 11.4.0.106. The recipe and `setup.sh` refuse an ARM archive by its file name, by its contents (aarch64 Python wheels, or a `targets/aarch64-linux-gnu` or `targets/sbsa-linux` directory) and, for an extracted tree, by the machine type of `libnvinfer`.
+- If the directory you name holds one x86_64 archive and also ARM ones, the x86_64 one is used and the ARM ones are reported as skipped. If it holds two x86_64 archives, name the one you mean.
 
 The recipe pins that SHA-256 and refuses another file, so a damaged or different download stops the build with a message naming both hashes. Then build and install, either with the guided script (it prints each command and asks before running it):
 
@@ -31,6 +37,8 @@ sudo pacman -U nvidia-tensorrt-sdk-local-11.4.0.106-1-x86_64.pkg.tar
 ```
 
 The package is several GiB, so `PKGEXT=.pkg.tar` skips a slow compression, and the build needs free space for the extracted tree, its copy in `pkg/` and the package. The source can also be an extracted tree, which has no checksum and only has its version checked.
+
+**A future release without a published checksum.** The `_trt_sha256=` line of the PKGBUILD can be left empty when a release's checksum is not published anywhere you can verify it. The archive must then carry the recipe's `_trt_archive` name, and nothing pins its content: `configure.sh --write` records the SHA-256 of the archive it saw, the PKGBUILD verifies the archive it builds from against that recorded sum, and otherwise prints the sum as "not pinned" for you to compare with NVIDIA's download page. The release in this recipe is pinned.
 
 ## What the package installs
 
@@ -104,6 +112,8 @@ The version lines must read `11.4.0.106`. With the environment file applied, the
 | The build stops on another TensorRT version | The source holds a version other than 11.4.0.106. Download the archive named above |
 | `configure.sh` finds no archive and no tree | The directory holds no `TensorRT-*.tar.*` and no tree with `include/NvInferVersion.h`. Pass the file with `--src` |
 | `configure.sh` finds two archives | Name the one you mean, or move the other away |
+| `this is the ARM (aarch64) build of TensorRT; download the Linux x86_64 one: <file> from https://developer.nvidia.com/tensorrt/download` | The archive (or tree) is the ARM build: its name says `aarch64` or `sbsa`, its contents hold aarch64 wheels or a `targets/aarch64-linux-gnu` or `targets/sbsa-linux` directory, or its `libnvinfer` is an aarch64 ELF file. Download the x86_64 file the message names. When the ARM version is newer than the recipe's, the message adds that NVIDIA publishes it for ARM only and which x86_64 version to take |
+| `<file> is not the archive this recipe packages: expected TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-...` | A different x86_64 archive, for example the `cuda-12.9` build of the same version. The package depends on CUDA 13.4: download the `cuda-13.4` file |
 | `pacman -U` stops on `cuda` | The installed CUDA is outside `13.4` to `14`. See [Versions and CUDA](#versions-and-cuda) |
 | A program cannot find `libnvinfer.so` | It was not linked with an RPATH and the environment file is not loaded for it. Link with the RPATH, or load the file for that program only |
 | `pkg-config` does not find `nvidia-tensorrt` | `PKG_CONFIG_PATH` lacks `/opt/nvidia/tensorrt/lib/pkgconfig` (`NVIDIA_TRT_PKG_CONFIG_PATH`) |
