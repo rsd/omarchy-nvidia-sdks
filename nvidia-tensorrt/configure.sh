@@ -16,11 +16,15 @@
 # verifies that the version (read from include/NvInferVersion.h) is this
 # recipe's pkgver, that the headers and libraries a consumer needs are
 # present, and, for an archive, that its SHA-256 is the one pinned in the
-# PKGBUILD (_trt_archive, _trt_sha256). An extracted tree has no checksum
-# to verify. A device, fifo or socket, or a symbolic link whose target is
-# absolute or leads out of the tree, is refused (in an archive, judged from
-# bsdtar's listing; the build checks the extracted tree again). This script
-# uses no network and never runs sudo.
+# PKGBUILD (_trt_archive, _trt_sha256). When _trt_sha256 is empty (NVIDIA
+# publishes no checksum for the release), the archive must carry the name
+# _trt_archive and its SHA-256 is only reported, for you to compare with
+# your download. An extracted tree has no checksum to verify. The ARM
+# (aarch64) build is refused, by its file name or its contents. A device,
+# fifo or socket, or a symbolic link whose target is absolute or leads out
+# of the tree, is refused (in an archive, judged from bsdtar's listing; the
+# build checks the extracted tree again). This script uses no network and
+# never runs sudo.
 #
 # A valid source prints these machine-readable lines first, one per line,
 # then a report for people:
@@ -78,11 +82,16 @@ q() { printf '%q' "$1"; } # a path as a shell word, for the printed commands
 pkgbuild_value() { sed -n "s/^$1=\\([A-Za-z0-9._+-]*\\)\$/\\1/p" "$here/PKGBUILD"; }
 version=$(pkgbuild_value pkgver)
 pinned_archive=$(pkgbuild_value _trt_archive)
-pinned_sha256=$(pkgbuild_value _trt_sha256)
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "no pkgver= line in $here/PKGBUILD"
 [[ -n $pinned_archive ]] || die "no _trt_archive= line in $here/PKGBUILD"
-[[ $pinned_sha256 =~ ^[0-9a-f]{64}$ ]] || die "no _trt_sha256= line in $here/PKGBUILD"
+# _trt_sha256: 64 hex digits, or empty while NVIDIA publishes no checksum.
+grep -q '^_trt_sha256=' "$here/PKGBUILD" || die "no _trt_sha256= line in $here/PKGBUILD"
+pinned_sha256=$(sed -n 's/^_trt_sha256=//p' "$here/PKGBUILD" | head -n 1)
+[[ -z $pinned_sha256 || $pinned_sha256 =~ ^[0-9a-f]{64}$ ]] ||
+    die "_trt_sha256= in $here/PKGBUILD must be 64 lowercase hexadecimal digits, or empty when no checksum is published"
 url=$(sed -n "s/^url='\\(.*\\)'\$/\\1/p" "$here/PKGBUILD")
+# What source.sh's ARM refusal names.
+trt_expected_archive=$pinned_archive trt_expected_version=$version trt_download_url=$url
 
 show_selection() {
     if ! nvidia_trt_read_selection "$conf"; then
@@ -130,9 +139,17 @@ other_archive=''
 if [[ $trt_layout == archive ]]; then
     sha256=$(trt_sha256 "$trt_path") || die "cannot read $trt_path"
     name=${trt_path##*/}
-    if [[ $sha256 == "$pinned_sha256" ]]; then
+    if [[ -z $pinned_sha256 ]]; then
+        if [[ $name == "$pinned_archive" ]]; then
+            checksum_note="SHA-256 $sha256 (not pinned: NVIDIA publishes no checksum for this release; compare it with your download)"
+        else
+            other_archive="$trt_path is not the archive this recipe packages: expected $pinned_archive, got $name (SHA-256 $sha256)"
+        fi
+    elif [[ $sha256 == "$pinned_sha256" ]]; then
         checksum_note="SHA-256 matches the pinned $pinned_archive"
         [[ $name == "$pinned_archive" ]] || checksum_note+=" (the file is named $name)"
+    elif ! trt_refuse_arm_archive "$trt_path"; then
+        die "cannot use $trt_path (from $src_from; see README.md)"
     elif [[ $name == "$pinned_archive" ]]; then
         die "$trt_path: SHA-256 mismatch: expected $pinned_sha256, got $sha256." \
             "The file is incomplete or damaged: download it again from $url"
@@ -172,6 +189,9 @@ if [[ $trt_layout == archive ]]; then
 else
     echo "  layout    extracted tree"
 fi
+for f in "${trt_arm_skipped[@]}"; do
+    echo "  skipped   $f (the ARM (aarch64) build)"
+done
 echo "  checksum  $checksum_note"
 echo "  present   ${trt_features[*]}"
 absent=()

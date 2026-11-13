@@ -9,8 +9,10 @@
 # for a checksum mismatch, another version and a hostile selection.conf
 # (never executed, and without effect on `makepkg --printsrcinfo`), for an
 # archive or tree with a symbolic link out of it or a special file, and for
-# a tree changed after configure.sh --write; and the targets/x86_64-linux-gnu
-# layout.
+# a tree changed after configure.sh --write; the archive unpinned (no
+# published checksum: built, with its SHA-256 printed; a SHA-256 recorded by
+# configure.sh still checked); the ARM (aarch64) build refused, by name and
+# by contents; and the targets/x86_64-linux-gnu layout.
 # Everything happens under mktemp: the recipe files are copied there, the
 # fake archive's SHA-256 is pinned in the copied PKGBUILD, and makepkg's
 # BUILDDIR, PKGDEST, SRCDEST and LOGDEST point there, so this working tree
@@ -221,6 +223,71 @@ trt_tree "$stage/old/TensorRT-10.13.3.9" 10 13 3 9
 build oldtree NVIDIA_TRT_SRC="$stage/old/TensorRT-10.13.3.9"
 check "another version stops the build" test "$status" -ne 0
 check "it names both versions" logged "holds TensorRT 10.13.3.9, but this recipe packages TensorRT 11.4.0.106"
+
+echo "== no pinned SHA-256"
+# unpin: empties _trt_sha256 in the copied PKGBUILD (no published checksum).
+unpin() { sed -i "s/^_trt_sha256=.*/_trt_sha256=/" "$recipe/PKGBUILD"; }
+unpin
+not_pinned="(not pinned: NVIDIA publishes no checksum for this release; compare it with your download)"
+build unpinned NVIDIA_TRT_SRC="$dl"
+built "makepkg -f -d builds an unpinned archive"
+check "prepare() prints its SHA-256 as not pinned" logged "SHA-256 $sum $not_pinned"
+check "it does not claim the checksum was verified" not logged "verified"
+printf 'NVIDIA_TRT_SRC=%s\nNVIDIA_TRT_SHA256=%s\n' "$dl/$name" "$sum" >"$recipe/selection.conf"
+build unpinnedconf
+built "makepkg -f -d builds an unpinned archive with the SHA-256 configure.sh recorded"
+check "it says the SHA-256 is the recorded one, not pinned" \
+    logged "SHA-256 $sum as configure.sh --write recorded it (not pinned: NVIDIA publishes no checksum for this release; compare it with your download)"
+printf 'NVIDIA_TRT_SRC=%s\nNVIDIA_TRT_SHA256=%064d\n' "$dl/$name" 0 >"$recipe/selection.conf"
+build unpinnedstale
+check "unpinned, a recorded SHA-256 that no longer matches stops the build" test "$status" -ne 0
+check "it says to run configure.sh again" logged "changed since configure.sh --write"
+check "no package was built" test -z "$pkg"
+rm -f "$recipe/selection.conf"
+mkdir -p "$tmp/renamed"
+cp "$dl/$name" "$tmp/renamed/TensorRT-copy.tar.zst"
+build unpinnedrenamed NVIDIA_TRT_SRC="$tmp/renamed/TensorRT-copy.tar.zst"
+check "unpinned, an archive under another name stops the build" test "$status" -ne 0
+check "it names the expected archive" logged "is not the archive this recipe packages: expected $name, got TensorRT-copy.tar.zst"
+
+echo "== the ARM (aarch64) build"
+pin "$dl/$name"
+# NVIDIA publishes TensorRT 11.4.1.31 for ARM only: the fixture is that
+# release, as the real ARM download is.
+arm_name=TensorRT-Enterprise-11.4.1.31-Linux-aarch64-cuda-13.4-Release-external.tar.zst
+arm_says=": this is the ARM (aarch64) build of TensorRT; download the Linux x86_64 one: $name from https://developer.nvidia.com/tensorrt/download"
+arm_only="$arm_says (NVIDIA publishes TensorRT 11.4.1.31 for ARM only; the x86_64 one to download is 11.4.0.106)"
+arm=$stage/arm/TensorRT-11.4.1.31
+trt_tree "$arm" 11 4 1 31
+rm "$arm/python/tensorrt-11.4.0.106-cp313-none-linux_x86_64.whl"
+fake "$arm/python/tensorrt-11.4.1.31-cp313-none-linux_aarch64.whl"
+mkdir -p "$tmp/armdl"
+bsdtar --zstd -cf "$tmp/armdl/$arm_name" -C "$stage/arm" TensorRT-11.4.1.31
+build armname NVIDIA_TRT_SRC="$tmp/armdl/$arm_name"
+check "an archive named for aarch64 stops the build" test "$status" -ne 0
+check "it says it is the ARM build, and which file to download" logged "$tmp/armdl/$arm_name$arm_only"
+build armdir NVIDIA_TRT_SRC="$tmp/armdl"
+check "a directory holding only it stops the build, naming it as the ARM build" logged "$tmp/armdl/$arm_name$arm_only"
+mkdir -p "$tmp/armboth"
+cp "$dl/$name" "$tmp/armdl/$arm_name" "$tmp/armboth/"
+build armboth NVIDIA_TRT_SRC="$tmp/armboth"
+built "a directory with one x86_64 and one ARM archive builds the x86_64 one"
+check "prepare() names the ARM archive it set aside" logged "skipped $tmp/armboth/$arm_name (the ARM (aarch64) build)"
+mkdir -p "$tmp/armren"
+cp "$tmp/armdl/$arm_name" "$tmp/armren/$name"
+build armrenamed NVIDIA_TRT_SRC="$tmp/armren/$name"
+check "an aarch64 archive renamed to the x86_64 name stops the build" test "$status" -ne 0
+check "it is named as the ARM build, by its contents" logged "$tmp/armren/$name$arm_says"
+check "nothing was extracted from it" test -z "$(find "$tmp/armrenamed/build" -name NvInfer.h -print -quit)"
+check "no package was built from it" test -z "$pkg"
+ae=$stage/armelf/TensorRT-11.4.0.106
+trt_tree "$ae" 11 4 0 106
+rm -r "${ae:?}/python"
+printf '\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x00\xb7\x00' >"$ae/lib/libnvinfer.so.11.4.0"
+build armelf NVIDIA_TRT_SRC="$ae"
+check "a tree whose libnvinfer is an aarch64 ELF stops the build" test "$status" -ne 0
+check "it is named as the ARM build" logged "$ae$arm_says"
+check "no package was built from the ARM tree" test -z "$pkg"
 
 echo "== links out of the tree and special files"
 hostile() { # hostile <root> <target>: a tree whose lib/libnvinfer.so links to <target>

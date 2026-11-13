@@ -6,7 +6,9 @@
 # mktemp, so selection.conf is never written into the working tree. The
 # copied PKGBUILD has the fake archive's SHA-256 pinned in place of the real
 # one (configure.sh reads _trt_archive and _trt_sha256 from the PKGBUILD next
-# to it); the fake archive carries the real archive's name.
+# to it); the fake archive carries the real archive's name. Other cases run
+# the copy unpinned (as for a release with no published checksum), and
+# against fake ARM (aarch64) archives and trees.
 # Usage: nvidia-tensorrt/tests/configure-test.sh. Exits non-zero on any
 # failure, 77 when bsdtar is missing.
 # shellcheck source-path=SCRIPTDIR/..
@@ -94,6 +96,8 @@ conf=$trt/selection.conf
 # pin <archive>: pins that archive's SHA-256 in the copied PKGBUILD (for the
 # fixtures that test what comes after the checksum); `pin "$archive"` restores.
 pin() { sed -i "s/^_trt_sha256=.*/_trt_sha256=$(sha256sum "$1" | cut -d' ' -f1)/" "$trt/PKGBUILD"; }
+# unpin: empties _trt_sha256 in the copied PKGBUILD (no published checksum).
+unpin() { sed -i "s/^_trt_sha256=.*/_trt_sha256=/" "$trt/PKGBUILD"; }
 check "the recipe pins the archive name the fixture uses" grep -qx "_trt_archive=$name" "$trt/PKGBUILD"
 check "the recipe pins a 64-digit SHA-256" grep -qE '^[0-9a-f]{64}$' <<<"$real_sum"
 
@@ -243,6 +247,140 @@ check "an unknown option is a usage error" test "$status" = 2
 run --show --write
 check "--show with --write is a usage error" test "$status" = 2
 check "no error wrote selection.conf" test ! -e "$conf"
+
+echo "== no pinned SHA-256"
+unpin
+before=$(listing "$dl")
+run --src "$archive"
+check "an unpinned archive with the recipe's name is valid" passes
+check "its SHA-256 is still a machine-readable line" head_is "version 11.4.0.106
+source $archive
+layout archive
+sha256 $sum
+$features"
+check "it says the SHA-256 is not pinned, to compare by hand" \
+    says "checksum  SHA-256 $sum (not pinned: NVIDIA publishes no checksum for this release; compare it with your download)"
+check "the download is untouched" test "$before" = "$(listing "$dl")"
+run --src "$other/TensorRT-copy.tar.zst"
+check "unpinned, an archive under another name is not this recipe's" \
+    fails_with "is not the archive this recipe packages: expected $name, got TensorRT-copy.tar.zst (SHA-256 $sum)"
+run --src "$archive" --write
+check "unpinned, --write still records the SHA-256" \
+    test "$(grep -v '^#' "$conf")" = "NVIDIA_TRT_SRC=$archive"$'\n'"NVIDIA_TRT_SHA256=$sum"
+rm -f "$conf"
+sed -i "s/^_trt_sha256=.*/_trt_sha256=XYZ/" "$trt/PKGBUILD"
+run --src "$archive"
+check "a malformed pinned SHA-256 is refused" \
+    fails_with "_trt_sha256= in $trt/PKGBUILD must be 64 lowercase hexadecimal digits, or empty"
+sed -i "/^_trt_sha256=/d" "$trt/PKGBUILD"
+run --src "$archive"
+check "a PKGBUILD without the _trt_sha256= line is refused" fails_with "no _trt_sha256= line in $trt/PKGBUILD"
+echo "_trt_sha256=$sum" >>"$trt/PKGBUILD"
+pin "$archive"
+
+echo "== the ARM (aarch64) build"
+# NVIDIA publishes TensorRT 11.4.1.31 for ARM only: the ARM fixture is that
+# release, as the real download is; the sbsa and targets/ fixtures are at the
+# recipe's version.
+arm_name=TensorRT-Enterprise-11.4.1.31-Linux-aarch64-cuda-13.4-Release-external.tar.zst
+sbsa_name=${name/-Linux-x86_64-/-Linux-sbsa-}
+arm_says=": this is the ARM (aarch64) build of TensorRT; download the Linux x86_64 one: $name from https://developer.nvidia.com/tensorrt/download"
+arm_only="$arm_says (NVIDIA publishes TensorRT 11.4.1.31 for ARM only; the x86_64 one to download is 11.4.0.106)"
+# arm_tree <root>: a fake 11.4.1.31 tree as the ARM archive ships it (its
+# Python wheel built for linux_aarch64).
+arm_tree() {
+    trt_tree "$1" 11 4 1 31
+    rm "$1/python/tensorrt-11.4.0.106-cp313-none-linux_x86_64.whl"
+    fake "$1/python/tensorrt-11.4.1.31-cp313-none-linux_aarch64.whl"
+}
+# elf_lib <file> <e_machine byte>: the first 20 bytes of an ELF shared
+# object (64-bit, little-endian) for that machine (3e x86_64, b7 aarch64).
+elf_lib() { printf '%b' '\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x00'"\\x$2"'\x00' >"$1"; }
+arm_tree "$stage/arm/TensorRT-11.4.1.31"
+pack "$tmp/armdl/$arm_name" "$stage/arm" TensorRT-11.4.1.31
+for pinned in yes no; do
+    [[ $pinned == yes ]] || unpin
+    run --src "$tmp/armdl/$arm_name"
+    check "an archive named for aarch64 is refused by its name (pinned: $pinned)" fails_with "$tmp/armdl/$arm_name$arm_says"
+    check "it says 11.4.1.31 is ARM only and names 11.4.0.106 (pinned: $pinned)" says "$tmp/armdl/$arm_name$arm_only"
+    check "no machine-readable line for it (pinned: $pinned)" test -z "$stdout"
+    run --src "$tmp/armdl"
+    check "a directory holding only the aarch64 archive names it as the ARM build (pinned: $pinned)" \
+        fails_with "$tmp/armdl/$arm_name$arm_says"
+    check "and does not say it holds no archive (pinned: $pinned)" not says "holds no TensorRT archive"
+done
+pin "$archive"
+mkdir -p "$tmp/armsbsa"
+cp "$archive" "$tmp/armsbsa/$sbsa_name"
+run --src "$tmp/armsbsa/$sbsa_name"
+check "an archive named for sbsa is refused by its name" fails_with "$tmp/armsbsa/$sbsa_name$arm_says"
+check "at the recipe's version, it adds no ARM-only note" not says "for ARM only"
+mkdir -p "$tmp/armboth"
+cp "$archive" "$tmp/armdl/$arm_name" "$tmp/armboth/"
+run --src "$tmp/armboth"
+check "a directory with one x86_64 and one ARM archive uses the x86_64 one" passes
+check "it resolves to the x86_64 archive" grep -qx "source $tmp/armboth/$name" <<<"$stdout"
+check "it names the ARM archive it set aside" says "  skipped   $tmp/armboth/$arm_name (the ARM (aarch64) build)"
+cp "$archive" "$tmp/armboth/TensorRT-11.4.0.106-other.tar.zst"
+run --src "$tmp/armboth"
+check "with two other archives, the directory holds three" fails_with "holds 3 TensorRT archives"
+check "it says which is the ARM build" says "  $tmp/armboth/$arm_name (the ARM (aarch64) build: not this one)"
+check "and not of the others" grep -qxF "  $tmp/armboth/$name" <<<"$out"
+mkdir -p "$tmp/armtwo"
+cp "$tmp/armdl/$arm_name" "$tmp/armtwo/"
+cp "$tmp/armsbsa/$sbsa_name" "$tmp/armtwo/"
+run --src "$tmp/armtwo"
+check "a directory holding only two ARM archives holds two" fails_with "holds 2 TensorRT archives"
+unpin
+mkdir -p "$tmp/armren"
+cp "$tmp/armdl/$arm_name" "$tmp/armren/$name"
+run --src "$tmp/armren/$name"
+check "an aarch64 archive renamed to the x86_64 name is refused by its contents" fails_with "$tmp/armren/$name$arm_says"
+check "its version is read from its top directory, not the name" says "$tmp/armren/$name$arm_only"
+cp "$tmp/armdl/$arm_name" "$tmp/armren/TensorRT-mine.tar.zst"
+run --src "$tmp/armren/TensorRT-mine.tar.zst"
+check "an aarch64 archive under another name is named as the ARM build" \
+    fails_with "$tmp/armren/TensorRT-mine.tar.zst$arm_says"
+check "its version is read from its top directory" says "$tmp/armren/TensorRT-mine.tar.zst$arm_only"
+pin "$archive"
+run --src "$tmp/armren/$name"
+check "pinned to the x86_64 SHA-256, it is named as the ARM build" fails_with "$tmp/armren/$name$arm_says"
+check "not as a damaged download" not says "SHA-256 mismatch"
+pin "$tmp/armren/$name"
+run --src "$tmp/armren/$name"
+check "pinned to its own SHA-256, it is still refused by its contents" fails_with "$tmp/armren/$name$arm_says"
+tg=$stage/armtargets/TensorRT-11.4.0.106
+trt_tree "$tg"
+fake "$tg/targets/aarch64-linux-gnu/lib/libnvinfer.so.11.4.0"
+pack "$tmp/armtargets/$name" "$stage/armtargets" TensorRT-11.4.0.106
+pin "$tmp/armtargets/$name"
+run --src "$tmp/armtargets/$name"
+check "an archive with targets/aarch64-linux-gnu is refused" fails_with "$tmp/armtargets/$name$arm_says"
+pin "$archive"
+run --src "$stage/arm/TensorRT-11.4.1.31"
+check "an aarch64 tree is refused by its wheel's name" fails_with "$stage/arm/TensorRT-11.4.1.31$arm_only"
+mv "$stage/arm/TensorRT-11.4.1.31" "$stage/arm/mine"
+run --src "$stage/arm/mine"
+check "a tree's version is read from its header" fails_with "$stage/arm/mine$arm_only"
+mv "$stage/arm/mine" "$stage/arm/TensorRT-11.4.1.31"
+run --src "$tg"
+check "a tree with targets/aarch64-linux-gnu is refused" fails_with "$tg$arm_says"
+rm -r "${tg:?}/targets"
+fake "$tg/targets/sbsa-linux/lib/libnvinfer.so.11.4.0"
+run --src "$tg"
+check "a tree with targets/sbsa-linux is refused" fails_with "$tg$arm_says"
+ae=$stage/armelf/TensorRT-11.4.0.106
+trt_tree "$ae"
+rm -r "${ae:?}/python"
+elf_lib "$ae/lib/libnvinfer.so.11.4.0" b7
+run --src "$ae"
+check "a tree whose libnvinfer is an aarch64 ELF is refused" fails_with "$ae$arm_says"
+run --src "$stage/armelf"
+check "a directory holding that tree names it as the ARM build" fails_with "$ae$arm_says"
+elf_lib "$ae/lib/libnvinfer.so.11.4.0" 3e
+run --src "$ae"
+check "a tree whose libnvinfer is an x86_64 ELF is valid" passes
+check "no selection.conf was written by the ARM cases" test ! -e "$conf"
 
 echo "== links out of the tree and special files"
 # hostile <dir> <target>: a tree whose lib/libnvinfer.so links to <target>.

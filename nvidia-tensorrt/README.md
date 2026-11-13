@@ -17,7 +17,11 @@ TensorRT is downloaded by hand; nothing in this repository downloads it.
    ```
 
    with SHA-256 `c67c87674cbe7b2337d1c30cb16d48686ab79ecb11bf08cb764b71f4f2bb711b`.
-4. Save it in `~/Downloads` (the default source) or anywhere else, and point the build at it (below). Keep only one `TensorRT-*.tar.*` archive in the directory you name.
+
+   Not the ARM build, `TensorRT-Enterprise-...-Linux-aarch64-...` (or `-Linux-sbsa-...`): the recipe packages the x86_64 one and refuses the ARM archive or tree, by its file name or by its contents (an `aarch64` Python wheel or `targets/` directory, or, in a tree, an aarch64 `lib/libnvinfer.so`), and names the file to download instead. NVIDIA publishes some releases for ARM only (TensorRT 11.4.1.31, for one, has no x86_64 build); the refusal then says so and names the x86_64 version to download, `11.4.0.106`.
+
+   The `PKGBUILD` pins that SHA-256 in `_trt_sha256`. The line may be left empty for a future release whose checksum nobody publishes: the archive must then carry the name `_trt_archive`, and `configure.sh` and the build print its SHA-256 for you to compare with your download (`not pinned: NVIDIA publishes no checksum for this release`) and check it against the one `configure.sh --write` recorded.
+4. Save it in `~/Downloads` (the default source) or anywhere else, and point the build at it (below). Keep only one `TensorRT-*.tar.*` archive in the directory you name (archives named for the ARM build are set aside when exactly one other is there).
 
 ## Build inputs
 
@@ -26,7 +30,7 @@ One input, `NVIDIA_TRT_SRC`, from the environment, else from `selection.conf` in
 | Source | Example | Checked |
 |---|---|---|
 | the archive | `~/Downloads/TensorRT-Enterprise-11.4.0.106-...-Release-external.tar.zst` | SHA-256 against the value pinned in the PKGBUILD, then the version |
-| a directory holding exactly one `TensorRT-*.tar.*` | `~/Downloads` | the same; two archives are an error |
+| a directory holding exactly one `TensorRT-*.tar.*` | `~/Downloads` | the same; two archives are an error, unless all but one are named for the ARM build |
 | an extracted tree | `~/Downloads/TensorRT-11.4.0.106` (its `include/` holds `NvInferVersion.h`), or a directory holding one such tree | the version only: a tree has no checksum |
 
 A directory that holds both the archive and an extracted tree is read as the archive, which can be verified. In every case the version in `include/NvInferVersion.h` must be `11.4.0.106`, and the tree must hold `include/NvInfer.h`, `include/NvOnnxParser.h`, `include/NvInferVersion.h` and the libraries `libnvinfer`, `libnvinfer_plugin` and `libnvonnxparser` in `lib/`, or in `targets/x86_64-linux-gnu/lib/` when the archive ships its files there (with or without a `lib` link to it). `trtexec` (`bin/`), the Python wheels (`python/`) and `samples/` are packaged when present. Every other header in `include/`, such as `NvOnnxConfig.h` where a release ships it, is packaged as shipped but not required.
@@ -53,7 +57,7 @@ sha256 c67c87674cbe7b2337d1c30cb16d48686ab79ecb11bf08cb764b71f4f2bb711b
 features headers libs trtexec python samples
 ```
 
-`layout` is `archive` or `tree`, `sha256` is `none` for a tree, and `features` lists `headers libs` followed by whichever of `trtexec python samples` are present. It exits 0 for a valid source and 1 with the reason otherwise: no or several archives, a SHA-256 mismatch (it names both hashes; download the file again), another TensorRT version (it names both versions), or missing headers or libraries.
+`layout` is `archive` or `tree`, `sha256` is `none` for a tree, and `features` lists `headers libs` followed by whichever of `trtexec python samples` are present. The report's `checksum` line says whether the SHA-256 matches the pinned one, and a `skipped` line names an ARM archive set aside in the directory. It exits 0 for a valid source and 1 with the reason otherwise: no or several archives, the ARM (aarch64) build (it names the x86_64 file to download), a SHA-256 mismatch (it names both hashes; download the file again), another TensorRT version (it names both versions), or missing headers or libraries.
 
 ## Building and installing
 
@@ -64,7 +68,7 @@ PKGEXT=.pkg.tar makepkg -f
 sudo pacman -U nvidia-tensorrt-sdk-local-11.4.0.106-1-x86_64.pkg.tar
 ```
 
-`prepare()` prints the source and where it came from, copies the archive into makepkg's `src/` directory, and from then on reads only that copy: it verifies its SHA-256 again, checks its members and extracts it with `bsdtar` into `src/`, never next to your download. A download replaced while the build runs therefore cannot pass the checksum and be extracted in its place. An extracted tree is copied, and the copy is what is checked and packaged. The package is several GiB; `PKGEXT=.pkg.tar` skips a slow compression. Installing is your step: the recipe never runs `pacman` or `sudo`.
+`prepare()` prints the source and where it came from, copies the archive into makepkg's `src/` directory, and from then on reads only that copy: it verifies its SHA-256 again (against the pinned value, and against the one `configure.sh --write` recorded), checks its members and extracts it with `bsdtar` into `src/`, never next to your download. A download replaced while the build runs therefore cannot pass the checksum and be extracted in its place. An extracted tree is copied, and the copy is what is checked and packaged. The package is several GiB; `PKGEXT=.pkg.tar` skips a slow compression. Installing is your step: the recipe never runs `pacman` or `sudo`.
 
 ## What the package installs
 
@@ -136,4 +140,4 @@ tests/configure-test.sh   # configure.sh, source.sh and selection.sh on tiny fak
 tests/pkgbuild-test.sh    # a makepkg build of a fake archive in a temporary copy (exit 77 without makepkg, fakeroot or bsdtar)
 ```
 
-Both work on fake files under `mktemp`; neither needs a GPU, the network or a TensorRT download, and neither writes into this directory. The checksum tests pin the fake archive's SHA-256 in a temporary copy of the PKGBUILD, the file `configure.sh` reads `_trt_archive` and `_trt_sha256` from.
+Both work on fake files under `mktemp`; neither needs a GPU, the network or a TensorRT download, and neither writes into this directory. The checksum tests pin the fake archive's SHA-256 in a temporary copy of the PKGBUILD, the file `configure.sh` reads `_trt_archive` and `_trt_sha256` from, and run the copy unpinned too. The ARM tests use fake aarch64 archives and trees: an `aarch64` wheel name, an `aarch64` or `sbsa` `targets/` directory, and a 20-byte ELF header for aarch64 in place of `libnvinfer`.
