@@ -34,9 +34,11 @@ set -euo pipefail
 # child but NVIDIA's download_features.sh ever receives it (/proc/<pid>/environ
 # of every child keeps what it was started with). xtrace is off while the key
 # is read, so that a `bash -x` run does not print it; the key step refuses to
-# run under xtrace (see post_step).
+# run under xtrace (see post_step). allexport (`bash -a`,
+# SHELLOPTS=allexport, a BASH_ENV that sets it) would export every variable
+# assigned, the key too: it is turned off for good, nothing here needs it.
 case $- in *x*) setup_xtrace=1 ;; *) setup_xtrace=0 ;; esac
-set +x
+set +x +a
 declare +x env_key=${NGC_API_KEY-}
 unset NGC_API_KEY
 ((!setup_xtrace)) || set -x
@@ -92,7 +94,8 @@ desc_fields=(key title package obtain download_file licence default_src configur
     checksum_glob byhand_doc check_doc root env_file env_prefix core_lib check_files system_libs
     optional_libs model_dir model_dir_var model_glob feature_lib catalogue
     catalogue_features catalogue_early_access catalogue_what catalogue_default
-    post_script post_args post_out status summary request_url request_steps request_note)
+    post_script post_args post_out post_denied post_access_url status summary request_url
+    request_steps request_note)
 # A placeholder (status=placeholder) is an SDK that is not installable yet:
 # only these keys are allowed, and request_url and request_steps are required.
 ph_fields=(key title status summary licence request_url request_steps request_note)
@@ -201,6 +204,11 @@ read_descriptor() {
             [[ -n ${seen[$field]:-} ]] || die "$file: post_script needs $field="
         done
     fi
+    for field in post_denied post_access_url; do
+        [[ -z ${seen[$field]:-} || -n ${seen[post_script]:-} ]] || die "$file: $field needs post_script="
+    done
+    [[ -z ${seen[post_access_url]:-} || ${seen[post_access_url]} == https://* ]] ||
+        die "$file: post_access_url must be an https URL"
     [[ -z ${seen[feature_lib]:-} || -n ${seen[model_dir]:-} ]] || die "$file: feature_lib needs model_dir="
     [[ -z ${seen[feature_lib]:-} || (${seen[feature_lib]} == '{feature}'* && ${seen[feature_lib]} != *..*) ]] ||
         die "$file: feature_lib must begin with {feature} (the feature's directory below model_dir)"
@@ -330,12 +338,43 @@ show_catalogue() {
         n=$((n + 1))
         mark='[ ]' ea=''
         in_list "$name" "${sel[@]}" && mark='[x]'
-        [[ -n ${cat_ea[$key:$name]:-} ]] && ea=' [Early Access]'
+        [[ -n ${cat_ea[$key:$name]:-} ]] && ea=" [$ea_label]"
         printf '    %2d %s %-26s %s%s\n' "$n" "$mark" "$name" "${cat_desc[$key:$name]}" "$ea"
     done
+    ea_note "$key"
 }
-# parse_selection <key> <text>: names, numbers of the list, or all (comma or
-# space separated), printed in the order of the list; 1 with a message on
+# ea_label: how the list marks an effect the NGC account needs approval for.
+ea_label='access required: Maxine Early Access'
+# ea_names <key>: the Early Access names of the list, in order.
+ea_names() {
+    local name
+    for name in ${cat_names[$1]:-}; do [[ -z ${cat_ea[$1:$name]:-} ]] || printf '%s\n' "$name"; done
+}
+# ea_urls <key>: the distinct pages where access to the Early Access effects
+# is requested (post_access_url, {feature} the part of the name before the
+# first -), one per line; nothing without the field.
+ea_urls() {
+    local key=$1 name u
+    local -a ea_seen=()
+    [[ -n ${D[$key:post_access_url]:-} ]] || return 0
+    while IFS= read -r name; do
+        [[ -n $name ]] || continue
+        u=${D[$key:post_access_url]//\{feature\}/${name%%-*}}
+        in_list "$u" "${ea_seen[@]}" || {
+            ea_seen+=("$u")
+            printf '%s\n' "$u"
+        }
+    done < <(ea_names "$key")
+}
+# ea_note <key>: once after a list, the page where access to the marked
+# effects is requested.
+ea_note() {
+    local urls
+    urls=$(ea_urls "$1" | paste -sd ' ' | sed 's/ /, /g')
+    [[ -z $urls ]] || printf '    [%s]: request access at %s\n' "$ea_label" "$urls"
+}
+# parse_selection <key> <text>: names, numbers of the list, or all (every
+# effect but the Early Access ones; comma or space separated), printed in the order of the list; 1 with a message on
 # stderr for an unknown entry.
 parse_selection() {
     local key=$1 w name i
@@ -348,7 +387,9 @@ parse_selection() {
     }
     for w in "${words[@]}"; do
         if [[ $w == all ]]; then
-            picked+=("${names[@]}")
+            # every effect except the ones that need approval (they are
+            # chosen by name or number)
+            for name in "${names[@]}"; do [[ -n ${cat_ea[$key:$name]:-} ]] || picked+=("$name"); done
         elif [[ $w =~ ^[0-9]+$ ]] && ((10#$w >= 1 && 10#$w <= ${#names[@]})); then
             picked+=("${names[10#$w - 1]}")
         elif in_list "$w" "${names[@]}"; then
@@ -400,9 +441,11 @@ installation, and the commands to undo it.
                        "access required" only prints how to request access; all skips it
   --features-KEY LIST  the optional downloads of one SDK (KEY as in --sdk),
                        comma separated: names from the lists below, their
-                       numbers, or all. Without it the script shows the list
-                       and asks: numbers or names, all, or Enter for the
-                       default (marked [x]). A dry run takes the default.
+                       numbers, or all (every effect except those marked
+                       "access required", which are named or numbered to be
+                       chosen). Without it the script shows the list and asks:
+                       numbers or names, all, or Enter for the default
+                       (marked [x]). A dry run takes the default.
   --src-KEY PATH       where the download of one SDK is (KEY as in --sdk):
                        its download directory, or for an SDK downloaded as
                        one file, that file, the directory holding it or its
@@ -460,7 +503,10 @@ when NGC_API_KEY is set, else asked for without echo. This script never
 prints, logs or stores it and never puts it on a command line; it hands it
 only to that one script, in its environment. NVIDIA's script itself passes
 the key to curl or wget on their command line (visible in the process list
-while it runs), which this script cannot prevent.
+while it runs), which this script cannot prevent. It runs once per feature,
+its output shown with the key masked; a feature your NGC account has no
+access to (HTTP 402, e.g. an Early Access effect) is named with the page
+where access is requested, and the others are still added.
 
 Environment:
   MAXINE_SETUP_ROOT   prefix for /opt, /usr/share and the system libraries
@@ -694,7 +740,7 @@ fi
 # --features-<key>, else asked; a dry run and an empty answer take the
 # default).
 choose_features() {
-    local key=$1 answer text
+    local key=$1 answer text name
     local -a sel
     [[ -n ${cat_names[$key]:-} ]] || return 0
     say "  -- Optional downloads of the ${D[$key:title]} ([x]: $([[ -n ${features_arg[$key]:-} ]] && echo "--features-$key" || echo "the default"))"
@@ -724,6 +770,12 @@ choose_features() {
         say "  Selected: ${selection[$key]// /, }"
     else
         say "  Selected: none"
+    fi
+    # an Early Access effect is only ever selected by name or number
+    local -a ea_sel=()
+    for name in ${selection[$key]}; do [[ -z ${cat_ea[$key:$name]:-} ]] || ea_sel+=("$name"); done
+    if ((${#ea_sel[@]} > 0)); then
+        say "  Note: ${ea_sel[*]} needs Maxine Early Access approval; without it NGC answers HTTP 402 and the effect is skipped."
     fi
 }
 
@@ -817,12 +869,19 @@ present_table() {
 # on a "source <path>" line (empty without one). A download is missing when
 # the path does not exist, when configure.sh finds no SDK core, or, for an
 # SDK downloaded as one file (download_file), when configure.sh refuses a
-# directory that holds no such file. v_error is the first line configure.sh
-# printed on stderr when it refused the download (empty otherwise).
-v_reason='' v_missing=0 v_present='' v_layout='' v_source='' v_error=''
+# directory that holds no such file. A download configure.sh refuses as the
+# wrong build (its "this is the ARM (aarch64) build" line, for a file named
+# for that build or holding it) is not missing: v_reason is that line, so
+# that it is reported rather than "no SDK". It, and a file configure.sh
+# refuses as "not the archive this recipe packages" (another file, e.g. for
+# another CUDA), set v_wrong_build to 1: the file can never become usable,
+# another one is to be downloaded. v_error is
+# the first line configure.sh printed on stderr when it refused the download
+# (empty otherwise).
+v_reason='' v_missing=0 v_present='' v_layout='' v_source='' v_error='' v_wrong_build=0
 validate() {
     local key=$1 dir=$2 all out err glob=${D[$1:download_file]:-} rc=0
-    v_reason='' v_missing=0 v_present='' v_layout='' v_source='' v_error=''
+    v_reason='' v_missing=0 v_present='' v_layout='' v_source='' v_error='' v_wrong_build=0
     if [[ -z $glob && ! -d $dir ]]; then
         v_reason="the directory $dir does not exist" v_missing=1
         return 1
@@ -838,6 +897,12 @@ validate() {
     if ((rc != 0)); then
         err=$(sed -n 's/^\x1f//p' <<<"$all")
         v_error=$(grep -m 1 -v '^[[:space:]]*$' <<<"$err" || true)
+        v_reason=$(grep -m 1 -F 'this is the ARM (aarch64) build' <<<"$err" || true)
+        if [[ -n $v_reason ]]; then
+            v_reason=${v_reason#configure.sh: } v_wrong_build=1
+            return 1
+        fi
+        grep -qF 'is not the archive this recipe packages' <<<"$err" && v_wrong_build=1
         glob=${glob//\{version\}/*}
         if grep -q 'no Maxine .* SDK found in' <<<"$out" ||
             { [[ -n $glob && -d $dir ]] && ! compgen -G "$dir/$glob" >/dev/null; }; then
@@ -1087,6 +1152,13 @@ process() {
         else
             say "  The download in $src is not usable: $v_reason"
         fi
+        # The wrong build, named as a file: the right one has another name,
+        # so the steps, the re-check and nothing else name the directory
+        # that holds it, not this file.
+        if ((v_wrong_build)) && [[ -f $src ]]; then
+            src=$(dirname -- "$src")
+            say "  Looking in $src for the right file instead."
+        fi
         download_cmd "$key" "$src" "${sel[@]}"
         if ((!shown)); then
             if ((v_missing)) || [[ ${D[$key:obtain]} != ngc ]]; then
@@ -1121,7 +1193,9 @@ process() {
     dl_packaged[$key]=$(present_features | tr '\n' ' ')
     dl_present[$key]=$v_present
     ((valid)) || dl_packaged[$key]="$(for name in "${sel[@]}"; do printf '%s ' "${name%%-*}"; done)"
-    if ((!valid && !dry_run)); then
+    # The wrong build is no download to go on with, in a dry run too: no
+    # commands for after it.
+    if ((!valid && (!dry_run || v_wrong_build))); then
         say "  Skipped the ${D[$key:title]}."
         state[$key]="skipped (no valid download)"
         return 0
@@ -1370,9 +1444,14 @@ has_effect() {
 # compared per effect (feature and rate). An effect whose feature is in the
 # package but whose rate is not cannot be added here: the feature's
 # directory is pacman's, so it goes the packaged way (download.sh, rebuild).
+# The script runs once per feature, so that a feature the NGC account has no
+# access to (its output holds post_denied, NVIDIA's HTTP 402) is reported
+# and the others are still downloaded and copied; such a refusal alone is
+# not a failure. Its output is shown as it comes, with the key masked, and
+# kept (masked) to look for that refusal.
 post_step() { # post_step <key>
-    local key=$1 name f fdir out script rc w
-    local -a sel packaged rates=() effects=() features=() args=() rebuild=()
+    local key=$1 name f fdir out script rc w log
+    local -a sel packaged rates=() effects=() features=() args=() rebuild=() fx=() got=() denied=()
     fdir=$(sdk_model_dir "$key")
     out=$(home_path "${D[$key:post_out]}")
     script=${D[$key:post_script]}
@@ -1430,26 +1509,52 @@ post_step() { # post_step <key>
 TEXT
     local -a post_words
     read -r -a post_words <<<"${D[$key:post_args]:-}"
-    # post_argv <out>: args, with {out} the given directory
+    # post_argv <out> <effect...>: args, with {out} the given directory and
+    # {list} the effects
     post_argv() {
+        local o=$1
+        shift
         args=()
         for w in "${post_words[@]}"; do
-            w=${w//\{list\}/$(csv "${effects[@]}")}
-            args+=("${w//\{out\}/$1}")
+            w=${w//\{list\}/$(csv "$@")}
+            args+=("${w//\{out\}/$o}")
         done
     }
-    # copy_argv <dir>: the copy of the requested feature directories only
+    # copy_argv <dir> <feature...>: the copy of those feature directories only
     copy_argv() {
+        local d=$1
+        shift
         copy=(sudo cp -R --no-preserve=ownership --)
-        for f in "${features[@]}"; do copy+=("$1/$f"); done
+        for f in "$@"; do copy+=("$d/$f"); done
         copy+=("$fdir/")
+    }
+    # post_mask: copies its input to fd 3 (the terminal's stdout) and to its
+    # stdout, with the key replaced, then anything that looks like a key or
+    # a token, with the patterns of scripts/check-ngc.sh's mask. The key is
+    # replaced by bash, so it reaches no other program; sed only gets the
+    # line without it. Unlike check-ngc.sh, a long run of characters counts
+    # without "/": NVIDIA's output shows API URLs and paths, which it would
+    # hide (a token, base64url or a JWT, has no "/" to break it up).
+    post_mask() {
+        local line
+        while IFS= read -r line || [[ -n $line ]]; do
+            line=${line//"$ngc_key"/<NGC API key>}
+            line=$(printf '%s\n' "$line" | sed -E \
+                -e 's/nvapi-[A-Za-z0-9_-]+/****/g' \
+                -e 's/(Bearer|Basic)[[:space:]]+[^[:space:]"]+/\1 ****/gI' \
+                -e 's/"(token|access_token|apiKey|api_key|key)"[[:space:]]*:[[:space:]]*"[^"]*"/"\1": "****"/gI' \
+                -e 's/oauthtoken:[^[:space:]"]*/oauthtoken:****/g' \
+                -e 's#[A-Za-z0-9+=_-]{32,}#****#g')
+            printf '%s\n' "$line" >&3
+            printf '%s\n' "$line"
+        done
     }
     # The commands by hand, with "$dir" a new directory below post_out.
     local dl_line copy_line run_dir
     local -a copy
-    post_argv @DIR@
+    post_argv @DIR@ "${effects[@]}"
     dl_line="(cd $(q "$fdir") && NGC_API_KEY=<your key> ./$(cmdline "$script" "${args[@]}"))"
-    copy_argv @DIR@
+    copy_argv @DIR@ "${features[@]}"
     copy_line=$(cmdline "${copy[@]}")
     show_cmd "mkdir -p $(q "$out") && dir=\$(mktemp -d $(q "$out")/run.XXXXXX)"
     show_cmd "${dl_line//@DIR@/\"\$dir\"}"
@@ -1494,26 +1599,67 @@ TEXT
         warn "cannot create a download directory in $out"
         return 1
     }
-    post_argv "$run_dir"
-    copy_argv "$run_dir"
-    rc=0
-    (
-        NGC_API_KEY=$ngc_key
-        export NGC_API_KEY
-        cd -- "$fdir" && "./$script" "${args[@]}"
-    ) || rc=$?
+    for f in "${features[@]}"; do
+        fx=()
+        for name in "${effects[@]}"; do [[ ${name%%-*} != "$f" ]] || fx+=("$name"); done
+        post_argv "$run_dir" "${fx[@]}"
+        # A private TMPDIR (mode 700) per run, removed afterwards, also on an
+        # error or an interrupt: NVIDIA's script keeps the NGC token in a
+        # mktemp file that it never deletes. Its fixed /tmp/temp_list and
+        # /tmp/temp_lib.tar.gz (file lists and libraries, no key) cannot be
+        # redirected.
+        post_tmp=$(mktemp -d -- "${TMPDIR:-/tmp}/maxine-setup.XXXXXX") || {
+            ngc_key=''
+            warn "cannot create a private temporary directory; nothing was downloaded for $f"
+            return 1
+        }
+        chmod 700 -- "$post_tmp"
+        trap 'rm -rf -- "${post_tmp:?}"' EXIT
+        trap 'rm -rf -- "${post_tmp:?}"; exit 130' INT
+        trap 'rm -rf -- "${post_tmp:?}"; exit 143' TERM
+        rc=0
+        {
+            log=$(
+                (
+                    NGC_API_KEY=$ngc_key TMPDIR=$post_tmp
+                    export NGC_API_KEY TMPDIR
+                    cd -- "$fdir" && "./$script" "${args[@]}"
+                ) 2>&1 | post_mask
+            ) || rc=$?
+        } 3>&1
+        rm -rf -- "${post_tmp:?}"
+        trap - EXIT INT TERM
+        if ((rc == 0)); then
+            got+=("$f")
+        elif [[ -n ${D[$key:post_denied]:-} && $log == *"${D[$key:post_denied]}"* ]]; then
+            denied+=("$f")
+            rm -rf -- "${run_dir:?}/$f"
+            w=${D[$key:post_access_url]:-}
+            say "  $f: your NGC key works, but your account has no access to this model (HTTP 402: Early Access or an entitlement). Request access on its NGC page${w:+: ${w//\{feature\}/$f}}"
+        else
+            ngc_key=''
+            unset ngc_key
+            warn "$script failed for $f (status $rc, see above); nothing was copied (its download: $run_dir)"
+            return 1
+        fi
+    done
     ngc_key=''
     unset ngc_key
-    if ((rc != 0)); then
-        warn "$script failed (status $rc, see above); nothing was copied (its download: $run_dir)"
-        return 1
+    if ((${#denied[@]} > 0)); then
+        say "  Not downloaded (no access on NGC): ${denied[*]}. Run this script again once access is granted."
     fi
+    if ((${#got[@]} == 0)); then
+        rmdir -- "$run_dir" 2>/dev/null || true
+        say "  Nothing to copy."
+        return 0
+    fi
+    copy_argv "$run_dir" "${got[@]}"
     if ! check_md5 "$run_dir" "${D[$key:checksum_glob]}"; then
         printf '%s: %s\n' "$prog" "${md5_bad[@]}" >&2
         warn "bad checksum in $run_dir: delete it and download again; nothing was copied"
         return 1
     fi
-    for f in "${features[@]}"; do
+    for f in "${got[@]}"; do
         [[ -d $run_dir/$(feature_lib "$key" "$f") ]] || {
             warn "$script left no $run_dir/$(feature_lib "$key" "$f"); nothing was copied"
             return 1
@@ -1521,7 +1667,7 @@ TEXT
     done
     say "  Downloaded into $run_dir ($md5_count remaining checksum(s) verified)."
     show_cmd "$(cmdline "${copy[@]}")"
-    if ask "Copy ${features[*]} into $fdir with sudo (owned by root)?"; then
+    if ask "Copy ${got[*]} into $fdir with sudo (owned by root)?"; then
         "${copy[@]}" || {
             warn "the copy failed (see above)"
             return 1

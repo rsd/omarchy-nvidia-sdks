@@ -12,8 +12,9 @@
 # `registry {model|resource} download-version REF --dest D` by creating
 # D/<name>_v<tag>/ with that many files and bytes. A faults file
 # (REF MODE COUNT) makes the first COUNT downloads of REF fail (fail),
-# leave a partial directory and fail (partial), or succeed with one byte too
-# many (wrong). An info-faults file (REF MESSAGE...) makes `info REF` print
+# leave a partial directory and fail (partial), succeed with one byte too
+# many (wrong), or fail with HTTP 402, the account not entitled (paid). An
+# info-faults file (REF MESSAGE...) makes `info REF` print
 # MESSAGE on stderr and exit 1 (a 503, a timeout, a 403...), and
 # FAKE_NGC_BANNER=1 makes every `info` print an "update available" line first.
 # Usage: maxine-afx/tests/download-test.sh. Exits non-zero on any failure.
@@ -58,7 +59,7 @@ chmod +x "$mafx/configure.sh"
 # The basic tools, linked one by one: nothing else of the system is on PATH.
 sysbin=$tmp/sysbin
 mkdir -p "$sysbin"
-for tool in bash env cat grep sed awk find mkdir rm mv rmdir head tail realpath dirname truncate wc tr; do
+for tool in bash env cat grep sed awk find mkdir rm mv rmdir head tail realpath dirname truncate wc tr tee mktemp; do
     ln -s "$(command -v "$tool")" "$sysbin/$tool"
 done
 
@@ -129,6 +130,8 @@ JSON
         existing=''
         [[ -d $dir ]] && existing=' [existing]'
         echo "ngc registry $kind download-version $ref --dest $2$existing" >>"$FAKE_CALLS"
+        # Its live progress display needs stdout on the terminal, not a pipe.
+        [[ ! -p /dev/stdout ]] || echo "ngc stdout is a pipe" >>"$FAKE_CALLS"
         [[ -n $line ]] || denied
         read -r _ _ bytes files <<<"$line"
         mode='' limit=0
@@ -153,6 +156,10 @@ JSON
             partial)
                 truncate -s 0 "$dir/file1.bin"
                 echo "fake ngc: interrupted" >&2
+                exit 1
+                ;;
+            paid)
+                echo "Client Error: 402 Response: Payment Required - Request Id: fake-0402" >&2
                 exit 1
                 ;;
         esac
@@ -204,6 +211,8 @@ model $mx/afx_studio_voice:$v-lib 12 1
 model $mx/afx_studio_voice:$v-48k-sm120 90 6
 model $mx/afx_superres:$v-lib 7 1
 model $mx/afx_superres:$v-16k_to_48k-sm120 40 2
+model $mx/afx_speaker_focus:$v-lib 11 1
+model $mx/afx_speaker_focus:$v-48k-sm120 50 2
 EOF
 real_catalogue=$tmp/real-catalogue
 cat >"$real_catalogue" <<EOF
@@ -221,7 +230,8 @@ faults=$tmp/faults
 info_faults=$tmp/info-faults
 state=$tmp/state
 home=$tmp/home
-mkdir -p "$state" "$home"
+tmpdir=$tmp/tmpdir
+mkdir -p "$state" "$home" "$tmpdir"
 
 # run_with <stubdir> [VAR=value...] -- <args...>: download.sh in a clean
 # environment, without a terminal. stdout in $out, stderr in $err, both in
@@ -236,7 +246,7 @@ run_with() {
     status=0
     out=$(env -i HOME="$home" PATH="$sd:$sysbin" FAKE_CALLS="$calls" \
         FAKE_NGC_CATALOGUE="$catalogue" FAKE_NGC_FAULTS="$faults" FAKE_NGC_STATE="$state" \
-        FAKE_NGC_INFO_FAULTS="$info_faults" \
+        FAKE_NGC_INFO_FAULTS="$info_faults" TMPDIR="$tmpdir" \
         FAKE_SMI_OUT=12.0 "${vars[@]}" "$setsid_bin" -w "$dl" "$@" 2>"$tmp/err") || status=$?
     err=$(<"$tmp/err")
     all=$out$'\n'$err
@@ -474,6 +484,72 @@ check "nothing of it reaches the destination" test ! -e "$dest/afx_dereverb_v$v-
 check "the other items continue" complete "$dest/afx_studio_voice_v$v-48k-sm120" 6 90
 check "the next steps leave the failed feature out" says "--features denoiser,dereverb_denoiser,studio_voice --write"
 
+echo "== HTTP 402: the account is not entitled"
+sf_access="speaker_focus-48k: your NGC key works, but your account has no access to this model (HTTP 402: Early Access or an entitlement); request access on https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/models/afx_speaker_focus"
+fresh paid
+echo "$mx/afx_speaker_focus:$v-lib paid 99" >"$faults"
+run --yes --dest "$dest" --archs sm_120 --features denoiser-48k,speaker_focus-48k
+check "a 402 on one feature alone does not fail the run (0)" passes
+check "the 402 is not retried" test "$(ncalls "afx_speaker_focus:$v-lib --dest")" = 1
+check "its models are not fetched" not called "download-version $mx/afx_speaker_focus:$v-48k"
+check "the other feature is downloaded" complete "$dest/afx_denoiser_v$v-48k-sm120" 4 80
+check "nothing of the 402 feature reaches the destination" test ! -e "$dest/afx_speaker_focus_v$v-lib"
+check "it says which effect needs access, and where to ask" says "$sf_access"
+check "the summary lists it" says_err "^Skipped, your account has no access"
+check "the summary line names the effect" grep -qxF "  $sf_access" <<<"$err"
+check "the next steps say what is left out" says "without the features that need access (speaker_focus)"
+check "the next steps leave it out" says "--features denoiser --write"
+check ".partial is removed" test ! -e "$dest/.partial"
+check "ngc's output log is removed" test -z "$(find "$tmpdir" -mindepth 1)"
+check "ngc's 402 message is shown" says "402 Response: Payment Required"
+check "ngc's stdout is not piped (its progress display stays live)" not called "ngc stdout is a pipe"
+fresh paid
+echo "$mx/afx_speaker_focus:$v-48k-sm120 paid 99" >"$faults"
+run --yes --dest "$dest" --archs sm_120 --features denoiser-48k,speaker_focus-48k
+check "a 402 on a models item at download: the run succeeds (0)" passes
+check "the library this run had placed is removed again" test ! -e "$dest/afx_speaker_focus_v$v-lib"
+check "nothing of that feature is left in the destination" \
+    test -z "$(find "$dest" -maxdepth 1 -name 'afx_speaker_focus*')"
+check "the other feature stays" complete "$dest/afx_denoiser_v$v-lib" 1 10
+check "the next steps leave it out" says "--features denoiser --write"
+fresh paid
+item "afx_speaker_focus:$v-lib" "$dest"
+echo "$mx/afx_speaker_focus:$v-48k-sm120 paid 99" >"$faults"
+run --yes --dest "$dest" --archs sm_120 --features denoiser-48k,speaker_focus-48k
+check "a 402 on a models item: a library that was there before stays" \
+    complete "$dest/afx_speaker_focus_v$v-lib" 1 11
+fresh paid
+echo "$mx/afx_speaker_focus:$v-lib paid 99" >"$faults"
+run --yes --build --dest "$dest" --archs sm_120 --features denoiser-48k,speaker_focus-48k
+check "--build after a 402: it succeeds" passes
+check "--build builds what is there" \
+    grep -qxF "configure.sh --src $dest --archs sm_120 --features denoiser --write" "$calls"
+fresh paid
+echo "$mx/afx_speaker_focus:$v-48k-sm120 paid 99" >"$faults"
+echo "$mx/afx_denoiser:$v-lib fail 99" >>"$faults"
+run --yes --dest "$dest" --archs sm_120 --retries 1 --features denoiser-48k,speaker_focus-48k
+check "a 402 with another failure: the run fails (1)" test "$status" = 1
+check "the other failure is still retried" test "$(ncalls "afx_denoiser:$v-lib --dest")" = 2
+check "a 402 on a models item is not retried" test "$(ncalls "afx_speaker_focus:$v-48k-sm120 --dest")" = 1
+check "both are reported" says "$sf_access"
+fresh paid
+echo "$mx/afx_speaker_focus:$v-lib paid 99" >"$faults"
+run --yes --dest "$dest" --archs sm_120 --features speaker_focus-48k
+check "every feature needs access: the run fails (1)" fails_with 1 "nothing to build"
+fresh paid
+echo "$mx/afx_speaker_focus:$v-lib Client Error: 402 Response: Payment Required - Request Id: fake-1" >"$info_faults"
+run --dry-run --dest "$dest" --archs sm_120 --features denoiser-48k,speaker_focus-48k
+check "a 402 on a probe: the dry run succeeds" passes
+check "it is shown as no access" table_row "afx_speaker_focus:$v-lib" "no access \(HTTP 402: Early Access or an entitlement\)"
+check "it is named with the page to ask on" says "$sf_access"
+check "it is not in the download commands" not grep -qF speaker_focus <<<"$out"
+check "its models are not probed" not called "afx_speaker_focus:$v-48k"
+fresh paid
+echo "$mx/afx_speaker_focus:$v-48k-sm120 Client Error: 402 Response: Payment Required" >"$info_faults"
+run --dry-run --dest "$dest" --archs sm_120 --features denoiser-48k,speaker_focus-48k
+check "a 402 on a models probe skips the feature's library too" table_row "afx_speaker_focus:$v-lib" "skipped \(its feature needs access\)"
+check "the library is not in the download commands" not grep -qF speaker_focus <<<"$out"
+
 echo "== failed probes"
 fresh probe
 echo "$mx/afx_denoiser:$v-48k-sm120 Client Error: 503 Response: Service Unavailable - Request Id: fake-1" >"$info_faults"
@@ -530,8 +606,9 @@ check "no output names the key" not says SENTINEL-KEY-0f3a9
 check "no output says Permission denied" not says "Permission denied"
 chmod 600 "$home/.ngc/config"
 code=$(grep -vE '^[[:space:]]*#' "$recipe/download.sh")
+# A ~/.ngc path, not a host such as catalog.ngc.nvidia.com (named in hints).
 check "the script's code never names ~/.ngc or an API key" \
-    not grep -qiE '\.ngc|api_?key|NGC_CLI_API' <<<"$code"
+    not grep -qiE '(~|HOME}?|^|[[:space:]"=])/?\.ngc(/|[[:space:]"]|$)|api_?key|NGC_CLI_API' <<<"$code"
 check "the script's code never runs NVIDIA's download script" \
     not grep -qE '(^|[[:space:]/])(\./)?download_features\.sh[[:space:]]*($|[;&|])' <<<"$code"
 

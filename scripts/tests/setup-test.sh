@@ -17,8 +17,8 @@
 # that log, comparing the key it receives with a SHA-256 sum: the test key
 # itself is never written to any file. Every other program setup.sh can
 # start (each stub, the stub download.sh, and a wrapper around each basic
-# tool) logs "keyenv <name>" when NGC_API_KEY is in its environment, which
-# must never happen. Every run is under setsid, without a terminal, with
+# tool) logs "keyenv <name>" when NGC_API_KEY, or any variable holding the
+# test key, is in its environment, which must never happen. Every run is under setsid, without a terminal, with
 # answers on stdin.
 # Usage: scripts/tests/setup-test.sh. Exits non-zero on any failure.
 set -euo pipefail
@@ -193,6 +193,15 @@ calls=$tmp/calls state=$tmp/state home=$tmp/home root=$tmp/root
 mkdir -p "$state" "$home" "$tmp/tmpdir"
 : >"$calls"
 
+# keyenv_value <name>: a line of bash that logs "keyenv-value <name> <var>"
+# for each exported variable holding the test key (its name without the
+# nvapi- prefix: the key itself is never written to a file). Pure bash: it
+# runs inside the wrappers of grep and the like.
+keyenv_value() {
+    # shellcheck disable=SC2016 # the wrapper's own text, expanded when it runs
+    printf 'for v in $(compgen -e); do [[ ${!v} != *SETUPTESTSECRET* ]] || echo "keyenv-value %s $v" >>"${FAKE_CALLS:-/dev/null}"; done' "$1"
+}
+
 # The basic tools, one by one: nothing else of the system is on PATH. bash
 # and env are links (setup.sh itself runs on them); every other one is a
 # wrapper that logs whether NGC_API_KEY reached it, then runs the tool.
@@ -203,8 +212,8 @@ for tool in bash env; do ln -s "$(command -v "$tool")" "$sysbin/$tool"; done
 for tool in cat grep sed awk find mkdir rm mv rmdir head tail realpath dirname \
     basename df md5sum sha256sum sort tr wc ls cp chmod uname mktemp paste; do
     # shellcheck disable=SC2016 # the wrapper's own text, expanded when it runs
-    printf '#!%s\n[[ -z ${NGC_API_KEY+set} ]] || echo "keyenv %s" >>"${FAKE_CALLS:-/dev/null}"\nexec %q "$@"\n' \
-        "$bash_bin" "$tool" "$(command -v "$tool")" >"$sysbin/$tool"
+    printf '#!%s\n[[ -z ${NGC_API_KEY+set} ]] || echo "keyenv %s" >>"${FAKE_CALLS:-/dev/null}"\n%s\nexec %q "$@"\n' \
+        "$bash_bin" "$tool" "$(keyenv_value "$tool")" "$(command -v "$tool")" >"$sysbin/$tool"
     chmod +x "$sysbin/$tool"
 done
 # keyenv_none: no program but download_features.sh got the key.
@@ -271,6 +280,7 @@ EOF
 for f in "$stubs"/*; do
     # shellcheck disable=SC2016 # the stub's own text, expanded when it runs
     sed -i '1a [[ -z ${NGC_API_KEY+set} ]] || echo "keyenv '"${f##*/}"'" >>"${FAKE_CALLS:-/dev/null}"' "$f"
+    sed -i "2a $(keyenv_value "${f##*/}")" "$f"
 done
 chmod +x "$stubs"/*
 nopacman=$tmp/stubs-nopacman
@@ -306,16 +316,40 @@ MAXINE_AFX_ARCHS=sm_120
 MAXINE_AFX_RATES=48k
 EOF
 # It takes the key out of its environment first, so that the programs it
-# runs do not log it (keyenv). FAKE_DF_SKIP names a feature it leaves out.
+# runs do not log it (keyenv). FAKE_DF_SKIP names a feature it leaves out;
+# FAKE_DF_DENY one it is refused, as NVIDIA's script reports an HTTP 402
+# (an account without access), and FAKE_DF_FAIL one it fails on otherwise;
+# both exit 1 there, as NVIDIA's script does. FAKE_DF_ECHO_KEY=1 makes it
+# print the key it got, as a careless script could, and FAKE_DF_ECHO_TOKEN=1
+# token-like strings. Like NVIDIA's script it leaves a mktemp file behind
+# (for the token), and logs its TMPDIR and that directory's mode;
+# FAKE_DF_TERM=1 makes it send SIGTERM to its process group (setup.sh too).
 cat >"$afx_root/features/download_features.sh" <<'EOF'
 #!/usr/bin/env bash
+set +a # under a BASH_ENV that sets it, its own k would reach its children
 k=${NGC_API_KEY-}
 unset NGC_API_KEY
+for v in $(compgen -e); do
+    [[ ${!v} != *SETUPTESTSECRET* ]] || echo "keyenv-value download_features.sh $v" >>"$FAKE_CALLS"
+done
 echo "download_features.sh $* (in $PWD)" >>"$FAKE_CALLS"
+echo "dftmp ${TMPDIR:-unset} $(ls -ld -- "${TMPDIR:-/nonexistent}" 2>/dev/null | sed 's/ .*//')" >>"$FAKE_CALLS"
+echo "fake token" >"$(mktemp)"
+if [[ -n ${FAKE_DF_TERM:-} ]]; then
+    kill -TERM 0
+    sleep 5
+fi
 if [[ -n $k && $(printf '%s' "$k" | sha256sum) == "$FAKE_KEY_SUM" ]]; then
     echo "key ok" >>"$FAKE_CALLS"
 else
     echo "key missing" >>"$FAKE_CALLS"
+fi
+[[ -z ${FAKE_DF_ECHO_KEY:-} ]] || echo "Using the key $k"
+if [[ -n ${FAKE_DF_ECHO_TOKEN:-} ]]; then
+    echo '{"token": "tok-SENTINEL-in-json"}'
+    echo 'Authorization: Bearer abc.SENTINEL.ghi'
+    echo 'another key nvapi-OTHERSENTINEL0000'
+    echo 'a blob QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpTRU5USU5FTA'
 fi
 effects='' out=''
 while (($#)); do
@@ -328,6 +362,15 @@ done
 for e in ${effects//,/ }; do
     f=${e%%-*}
     [[ $f == "${FAKE_DF_SKIP:-}" ]] && continue
+    mkdir -p "$out/$f"
+    if [[ $f == "${FAKE_DF_DENY:-}" ]]; then
+        echo "-- ERROR: Could not download file (status: 402): https://api.ngc.nvidia.com/v2/org/nvidia/team/maxine/models/afx_$f/3.0.0-lib/files"
+        exit 1
+    fi
+    if [[ $f == "${FAKE_DF_FAIL:-}" ]]; then
+        echo "-- ERROR: Could not download file (status: 500): https://api.ngc.nvidia.com/v2/org/nvidia/team/maxine/models/afx_$f/3.0.0-lib/files"
+        exit 1
+    fi
     mkdir -p "$out/$f/lib" "$out/$f/models/sm_120"
     echo "fake lib" >"$out/$f/lib/libnv_audiofx_$f.so"
     echo "fake model" >"$out/$f/models/sm_120/${f}_${e#*-}_1.trtpkg"
@@ -526,11 +569,15 @@ check "it passes" passes
 check "the installed version skips build and install" says "Download, build and install skipped"
 check "an installed package is not rebuilt for the selection" not called "download.sh "
 check "download_features.sh ran in the features directory, into a new directory, without --gpu or -v" \
-    grep -qE "^download_features.sh -e superres-16k_to_48k,speaker_focus-48k -o $afx_out/run\.[A-Za-z0-9]{6} \(in $afx_root/features\)$" "$calls"
+    grep -qE "^download_features.sh -e superres-16k_to_48k -o $afx_out/run\.[A-Za-z0-9]{6} \(in $afx_root/features\)$" "$calls"
+check "it ran once per feature, into the same directory" \
+    test "$(sed -n 's/^download_features.sh -e [^ ]* -o \([^ ]*\) .*/\1/p' "$calls" | sort -u | wc -l)" = 1
+check "the second feature's run" \
+    grep -qE "^download_features.sh -e speaker_focus-48k -o $afx_out/run\.[A-Za-z0-9]{6} \(in $afx_root/features\)$" "$calls"
 check "it received the key" called "key ok"
 check "no other program got the key" keyenv_none
 check "declining the copy runs no sudo" not called sudo
-run_dir=$(sed -n "s|^download_features.sh .* -o \($afx_out/run\.[A-Za-z0-9]*\) .*|\1|p" "$calls")
+run_dir=$(sed -n "s|^download_features.sh .* -o \($afx_out/run\.[A-Za-z0-9]*\) .*|\1|p" "$calls" | head -n 1)
 check "the copy command of that directory is printed" \
     says "sudo cp -R --no-preserve=ownership -- $run_dir/superres $run_dir/speaker_focus $afx_root/features/"
 check "a declined copy keeps the download" test -d "$run_dir/superres/lib"
@@ -545,6 +592,42 @@ check "it names the missing feature directory" says "download_features.sh left n
 check "nothing was copied" not called sudo
 rm -rf "$afx_out/superres"
 
+echo "== the optional features, one refused with HTTP 402"
+# speaker_focus is Early Access: the account has no access (NVIDIA's script
+# prints the 402 and stops); superres still downloads and is copied. The
+# fake script prints the key: setup.sh masks it.
+answers='y\ny\n'
+run NGC_API_KEY="$secret" FAKE_DF_DENY=speaker_focus FAKE_DF_ECHO_KEY=1 -- \
+    --sdk afx --features-afx speaker_focus-48k,superres-16k_to_48k
+check "a 402 alone is not a failure" passes
+check "it says which feature needs access, and where to ask for it" \
+    says "  speaker_focus: your NGC key works, but your account has no access to this model (HTTP 402: Early Access or an entitlement). Request access on its NGC page: https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/models/afx_speaker_focus"
+check "it shows NVIDIA's own line" says "(status: 402): https://api.ngc.nvidia.com/v2/org/nvidia/team/maxine/models/afx_speaker_focus/3.0.0-lib/files"
+check "it sums up what was not downloaded" says "Not downloaded (no access on NGC): speaker_focus."
+check "the other feature was still downloaded" grep -qE "^download_features.sh -e superres-16k_to_48k -o " "$calls"
+check "and the refused one was tried" grep -qE "^download_features.sh -e speaker_focus-48k -o " "$calls"
+run_dir=$(sed -n "s|^download_features.sh .* -o \($afx_out/run\.[A-Za-z0-9]*\) .*|\1|p" "$calls" | head -n 1)
+check "only the other feature is copied" called "sudo cp -R --no-preserve=ownership -- $run_dir/superres $afx_root/features/"
+check "it is in the tree" test -d "$afx_root/features/superres/lib"
+check "the refused one is not" test ! -e "$afx_root/features/speaker_focus"
+check "the key the script printed is masked" says "Using the key <NGC API key>"
+check "the key is nowhere" secret_nowhere
+check "no other program got the key" keyenv_none
+rm -rf "${afx_root:?}/features/superres"
+answers='y\n'
+run NGC_API_KEY="$secret" FAKE_DF_DENY=speaker_focus -- --sdk afx --features-afx speaker_focus-48k
+check "only refused features: not a failure either" passes
+check "it says nothing is copied" says "Nothing to copy."
+check "nothing was copied" not called sudo
+echo "== the optional features, another failure"
+answers='y\ny\n'
+run NGC_API_KEY="$secret" FAKE_DF_FAIL=speaker_focus -- --sdk afx --features-afx speaker_focus-48k,superres-16k_to_48k
+check "a failure other than a 402 fails, as before" test "$status" -ne 0
+check "it names the failed feature" says "download_features.sh failed for speaker_focus (status 1, see above); nothing was copied"
+check "it is not reported as a 402" not says "has no access to this model"
+check "nothing was copied, not even the feature that downloaded" not called sudo
+check "the key is nowhere" secret_nowhere
+
 echo "== the optional features, key from the prompt"
 # Leftovers in the persistent download directory, from earlier runs.
 fake "$afx_out/leftover/lib/libnv_audiofx_leftover.so" "$afx_out/denoiser/lib/stale.so"
@@ -552,7 +635,7 @@ answers="y\n$secret\ny\n"
 run -- --sdk afx --features-afx speaker_focus-48k,superres-16k_to_48k
 check "it passes" passes
 check "it received the key" called "key ok"
-run_dir=$(sed -n "s|^download_features.sh .* -o \($afx_out/run\.[A-Za-z0-9]*\) .*|\1|p" "$calls")
+run_dir=$(sed -n "s|^download_features.sh .* -o \($afx_out/run\.[A-Za-z0-9]*\) .*|\1|p" "$calls" | head -n 1)
 check "the copy ran with sudo, of the two feature directories only, without keeping the owner" \
     called "sudo cp -R --no-preserve=ownership -- $run_dir/superres $run_dir/speaker_focus $afx_root/features/"
 check "the leftover of an earlier run was not copied" test ! -e "$afx_root/features/leftover"
@@ -601,6 +684,45 @@ check "it says why" says "xtrace (bash -x or set -x) is on: it would print the k
 check "download_features.sh did not run" not called download_features.sh
 check "the trace never shows the key" secret_nowhere
 check "no program got the key" keyenv_none
+
+echo "== the key step under allexport"
+# bash -a, SHELLOPTS=allexport or a BASH_ENV that sets it would export every
+# variable, the key too: no program but download_features.sh may get it.
+printf 'set -a\n' >"$tmp/bash-env-allexport"
+for v in SHELLOPTS=allexport BASH_ENV="$tmp/bash-env-allexport"; do
+    answers='y\n'
+    run "$v" NGC_API_KEY="$secret" FAKE_DF_DENY=studio_voice -- --sdk afx --features-afx studio_voice-16k
+    check "${v%%=*}, key from the environment: download_features.sh got it" called "key ok"
+    check "${v%%=*}, key from the environment: no other program got it" keyenv_none
+    check "${v%%=*}, key from the environment: it is nowhere" secret_nowhere
+done
+answers="y\n$secret\n"
+run SHELLOPTS=allexport FAKE_DF_DENY=studio_voice -- --sdk afx --features-afx studio_voice-16k
+check "allexport, key from the prompt: download_features.sh got it" called "key ok"
+check "allexport, key from the prompt: no other program got it" keyenv_none
+check "allexport, key from the prompt: it is nowhere" secret_nowhere
+
+echo "== the key step's private TMPDIR, and token-like output"
+answers='y\n'
+run NGC_API_KEY="$secret" FAKE_DF_DENY=studio_voice FAKE_DF_ECHO_TOKEN=1 -- \
+    --sdk afx --features-afx studio_voice-16k
+check "it passes" passes
+check "download_features.sh ran with a private TMPDIR (mode 700)" \
+    grep -qE "^dftmp $tmp/tmpdir/maxine-setup\.[A-Za-z0-9]{6} drwx------$" "$calls"
+df_tmp=$(sed -n 's/^dftmp \([^ ]*\) .*/\1/p' "$calls" | head -n 1)
+check "the private TMPDIR is removed, with the token file in it" test ! -e "$df_tmp"
+check "no temporary file is left behind" test -z "$(find "$tmp/tmpdir" -mindepth 1)"
+check "token-like output is masked" not grep -qF SENTINEL <<<"$out"
+check "the long blob is masked" not says "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpTRU5USU5FTA"
+check "the masked lines are still shown" says 'Authorization: Bearer ****'
+check "the masked JSON field is still shown" says '"token": "****"'
+check "NVIDIA's URL is still shown" says "(status: 402): https://api.ngc.nvidia.com/v2/org/nvidia/team/maxine/models/afx_studio_voice/3.0.0-lib/files"
+answers='y\n'
+run NGC_API_KEY="$secret" FAKE_DF_TERM=1 -- --sdk afx --features-afx studio_voice-16k
+check "interrupted (SIGTERM): it stops" test "$status" -ne 0
+check "interrupted: the private TMPDIR was used" grep -qE "^dftmp $tmp/tmpdir/maxine-setup\." "$calls"
+check "interrupted: no temporary file is left behind" test -z "$(find "$tmp/tmpdir" -mindepth 1)"
+check "interrupted: the key is nowhere" secret_nowhere
 
 echo "== feature directories copied in by hand, in a newer package"
 not_installed
@@ -1013,9 +1135,13 @@ for key in vfx ar afx; do
 done
 check "vfx lists eight, ar seven, afx twelve" \
     test "$(list_count vfx) $(list_count ar) $(list_count afx)" == "8 7 12"
-check "speaker_focus-16k is marked Early Access" grep -qE ' speaker_focus-16k .*\[Early Access\]$' <<<"$out"
-check "speaker_focus-48k is marked Early Access" grep -qE ' speaker_focus-48k .*\[Early Access\]$' <<<"$out"
-check "only the two speaker focus effects are Early Access" test "$(grep -c '\[Early Access\]' <<<"$out")" == 2
+label='\[access required: Maxine Early Access\]'
+check "speaker_focus-16k is labelled access required" grep -qE " speaker_focus-16k .* $label\$" <<<"$out"
+check "speaker_focus-48k is labelled access required" grep -qE " speaker_focus-48k .* $label\$" <<<"$out"
+check "only the two speaker focus effects are labelled" test "$(grep -c " $label\$" <<<"$out")" == 2
+check "superres is not labelled (it is generally available)" not grep -qE " superres-[0-9a-z_]+ .*access required" <<<"$out"
+check "the note names the access page, once, after the list" \
+    test "$(grep -c '^    \[access required: Maxine Early Access\]: request access at https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/models/afx_speaker_focus$' <<<"$out")" == 1
 check "the non-default AR features are offered unselected" listed ar nvarlipsync '[ ]'
 
 echo "== selecting optional downloads"
@@ -1044,8 +1170,30 @@ check "--features-ar reaches download.sh --features" \
     called "download.sh --dest $home/Downloads/maxine/ar-sdk --features nvarbodydetection,nvarbodyposeestimation,nvarlipsync"
 answers='y\ns\n'
 run MAXINE_AFX_SRC="$tmp/no-afx" -- --sdk afx --features-afx all
-check "afx all reaches download.sh with the twelve, Early Access included" \
-    called "download.sh --dest $tmp/no-afx --features denoiser-16k,denoiser-48k,dereverb-16k,dereverb-48k,dereverb_denoiser-16k,dereverb_denoiser-48k,superres-8k_to_16k,superres-16k_to_48k,studio_voice-16k,studio_voice-48k,speaker_focus-16k,speaker_focus-48k"
+check "afx all reaches download.sh with the ten, Early Access left out" \
+    called "download.sh --dest $tmp/no-afx --features denoiser-16k,denoiser-48k,dereverb-16k,dereverb-48k,dereverb_denoiser-16k,dereverb_denoiser-48k,superres-8k_to_16k,superres-16k_to_48k,studio_voice-16k,studio_voice-48k"
+check "all adds no Early Access note" not says "needs Maxine Early Access approval"
+run MAXINE_AFX_SRC="$tmp/no-afx" -- --sdk afx --features-afx all --dry-run
+check "a dry run's Selected line is the ten" \
+    says "Selected: denoiser-16k, denoiser-48k, dereverb-16k, dereverb-48k, dereverb_denoiser-16k, dereverb_denoiser-48k, superres-8k_to_16k, superres-16k_to_48k, studio_voice-16k, studio_voice-48k"
+check "speaker_focus is not in it" not says "Selected: .*speaker_focus"
+answers='y\ns\n'
+run MAXINE_AFX_SRC="$tmp/no-afx" -- --sdk afx --features-afx denoiser-48k,speaker_focus-16k
+check "naming an Early Access effect selects it" \
+    called "download.sh --dest $tmp/no-afx --features denoiser-48k,speaker_focus-16k"
+check "with a note on the approval and the 402" \
+    says "Note: speaker_focus-16k needs Maxine Early Access approval; without it NGC answers HTTP 402 and the effect is skipped."
+run MAXINE_AFX_SRC="$tmp/no-afx" -- --sdk afx --features-afx 11 --dry-run
+check "so does its number" says "Selected: speaker_focus-16k"
+check "with the note" says "Note: speaker_focus-16k needs Maxine Early Access approval"
+answers='all\ny\ns\n'
+run MAXINE_AFX_SRC="$tmp/no-afx" -- --sdk afx
+check "the interactive all is the ten too" \
+    called "download.sh --dest $tmp/no-afx --features denoiser-16k,denoiser-48k,dereverb-16k,dereverb-48k,dereverb_denoiser-16k,dereverb_denoiser-48k,superres-8k_to_16k,superres-16k_to_48k,studio_voice-16k,studio_voice-48k"
+run MAXINE_AFX_SRC="$tmp/no-afx" -- --sdk afx --features-afx superres-16k_to_48k --dry-run
+check "superres alone is selected, with no Early Access note" says "Selected: superres-16k_to_48k"
+check "and offered to download.sh" says "download.sh --dest $tmp/no-afx --features superres-16k_to_48k"
+check "without a note" not says "needs Maxine Early Access approval"
 run -- --sdk vfx --features-vfx nvvfxgreenscreen,nvvfxbogus
 check "an unknown --features-vfx name is a usage error" test "$status" == 2
 check "it names it" says "unknown feature 'nvvfxbogus' for the Video Effects SDK"
@@ -1170,6 +1318,72 @@ else
     check "trt: writing the selection passes" passes
     check "trt: the selection.conf records the archive" grep -qx "NVIDIA_TRT_SRC=$e2e_arc" "$trt_dir/selection.conf"
     check "trt: and its SHA-256" grep -qx "NVIDIA_TRT_SHA256=$e2e_arc_sum" "$trt_dir/selection.conf"
+    # The ARM (aarch64) build, downloaded by mistake: refused by its name and
+    # by its contents (a Python wheel for linux_aarch64), and reported as
+    # such, not as a missing download, nor as a download to go on with.
+    # NVIDIA publishes TensorRT 11.4.1.31 for ARM only: the fixture is that
+    # release, as the real ARM download is.
+    rm -f "$trt_dir/selection.conf"
+    trt_arm_file=TensorRT-Enterprise-11.4.1.31-Linux-aarch64-cuda-13.4-Release-external.tar.zst
+    trt_arm_says=": this is the ARM (aarch64) build of TensorRT; download the Linux x86_64 one: $trt_file from https://developer.nvidia.com/tensorrt/download (NVIDIA publishes TensorRT 11.4.1.31 for ARM only; the x86_64 one to download is 11.4.0.106)"
+    d=$e2e/trt-arm-stage/TensorRT-11.4.1.31
+    mkdir -p "$d/include"
+    {
+        printf '#define TRT_%s_ENTERPRISE %s\n' MAJOR 11 MINOR 4 PATCH 1 BUILD 31
+        printf '#define NV_TENSORRT_%s TRT_%s_ENTERPRISE\n' MAJOR MAJOR MINOR MINOR PATCH PATCH BUILD BUILD
+    } >"$d/include/NvInferVersion.h"
+    fake "$d/include/NvInfer.h" "$d/include/NvOnnxParser.h" "$d/lib/libnvinfer.so.11.4.1" \
+        "$d/lib/libnvinfer_plugin.so.11.4.1" "$d/lib/libnvonnxparser.so.11.4.1" \
+        "$d/python/tensorrt-11.4.1.31-cp313-none-linux_aarch64.whl"
+    mkdir -p "$e2e/trt-arm" "$e2e/trt-armren" "$e2e/trt-armboth"
+    "$real_bsdtar" --zstd -cf "$e2e/trt-arm/$trt_arm_file" -C "$e2e/trt-arm-stage" TensorRT-11.4.1.31
+    run PATH="$e2e_bin:$sysbin" -- --dry-run --sdk trt --src-trt "$e2e/trt-arm"
+    check "trt: a directory with only the aarch64 archive is reported as the ARM build" \
+        says "The download in $e2e/trt-arm is not usable: $e2e/trt-arm/$trt_arm_file$trt_arm_says"
+    check "trt: not as no download" not says "No TensorRT 11.4.0.106 download in"
+    check "trt: the browser steps name the x86_64 file" says "$trt_file (version 11.4.0.106)"
+    check "trt: and the directory to save it in" says "4. Save it in $e2e/trt-arm (where this script looks)"
+    check "trt: no selection command for the ARM download" not says "configure.sh --src $e2e/trt-arm"
+    check "trt: no build command for it" not says "NVIDIA_TRT_SRC=$e2e/trt-arm"
+    check "trt: no commands for after the download" not says "The commands below are for after the download"
+    check "trt: the summary does not say would-install" not says "trt: would-install"
+    check "trt: it says the TensorRT was skipped" says "trt: skipped (no valid download)"
+    run PATH="$e2e_bin:$sysbin" -- --dry-run --sdk trt --src-trt "$e2e/trt-arm/$trt_arm_file"
+    check "trt: the aarch64 archive itself is reported as the ARM build" \
+        says "The download in $e2e/trt-arm/$trt_arm_file is not usable: $e2e/trt-arm/$trt_arm_file$trt_arm_says"
+    check "trt: step 4 names its directory, not the ARM file" says "4. Save it in $e2e/trt-arm (where this script looks)"
+    check "trt: not the ARM file as the place to save" not says "Save it in $e2e/trt-arm/$trt_arm_file"
+    check "trt: no command names the ARM file" not says "--src $e2e/trt-arm/$trt_arm_file"
+    check "trt: no build command names it" not says "NVIDIA_TRT_SRC=$e2e/trt-arm/$trt_arm_file"
+    check "trt: the summary does not say would-install for it" not says "trt: would-install"
+    answers='s\n'
+    run PATH="$e2e_bin:$sysbin" -- --sdk trt --src-trt "$e2e/trt-arm/$trt_arm_file"
+    check "trt: interactively, it re-checks the directory, not the ARM file" \
+        says "Press Enter to re-check $e2e/trt-arm, or s to skip"
+    check "trt: and is skipped" says "trt: skipped (no valid download)"
+    cp "$e2e/trt-arm/$trt_arm_file" "$e2e/trt-armren/$trt_file"
+    run PATH="$e2e_bin:$sysbin" -- --dry-run --sdk trt --src-trt "$e2e/trt-armren"
+    check "trt: an aarch64 archive renamed to the x86_64 name is reported as the ARM build" \
+        says "The download in $e2e/trt-armren is not usable: $(realpath "$e2e/trt-armren/$trt_file")$trt_arm_says"
+    check "trt: not as a damaged download" not says "SHA-256 mismatch"
+    cp "$e2e_arc" "$e2e/trt-arm/$trt_arm_file" "$e2e/trt-armboth/"
+    run PATH="$e2e_bin:$sysbin" -- --dry-run --sdk trt --src-trt "$e2e/trt-armboth"
+    check "trt: a directory with the x86_64 and the ARM archive uses the x86_64 one" passes
+    check "trt: it finds the x86_64 archive" says "Found: $e2e/trt-armboth/$trt_file"
+    check "trt: the configure command names it" says "$trt_dir/configure.sh --src $e2e/trt-armboth/$trt_file --write"
+    # Another x86_64 archive (for another CUDA): another file, not this
+    # recipe's; it is no download to go on with either.
+    trt_other_file=${trt_file/-cuda-13.4-/-cuda-12.9-}
+    mkdir -p "$e2e/trt-other"
+    fake "$e2e/trt-stage/TensorRT-11.4.0.106/doc/cuda-12.9.txt"
+    "$real_bsdtar" --zstd -cf "$e2e/trt-other/$trt_other_file" -C "$e2e/trt-stage" TensorRT-11.4.0.106
+    run PATH="$e2e_bin:$sysbin" -- --dry-run --sdk trt --src-trt "$e2e/trt-other/$trt_other_file"
+    check "trt: an archive for another CUDA is not this recipe's" \
+        says "$e2e/trt-other/$trt_other_file is not the archive this recipe packages: expected $trt_file"
+    check "trt: step 4 names its directory" says "4. Save it in $e2e/trt-other (where this script looks)"
+    check "trt: no command names the other archive" not says "--src $e2e/trt-other/$trt_other_file"
+    check "trt: no would-install for it" not says "trt: would-install"
+    check "trt: no ARM case wrote a selection" test ! -e "$trt_dir/selection.conf"
     check "no program got a key" keyenv_none
     rm -rf "$of_dir" "$trt_dir" "$e2e"
     mv "$tmp/of-stub-recipe" "$of_dir"
@@ -1241,7 +1455,8 @@ chmod +x "$repo/maxine-zzz/configure.sh" "$repo/maxine-zzz/download.sh"
 run -- --help
 check "--help offers --features-zzz" says "--features-zzz (Zzz SDK, from maxine-zzz/download.sh)"
 check "its list has three, the default marked" listed zzz zalpha '[x]'
-check "its Early Access one is marked" grep -qE ' zgamma .*The third fake feature \[Early Access\]$' <<<"$out"
+check "its Early Access one is labelled" grep -qE ' zgamma .*The third fake feature \[access required: Maxine Early Access\]$' <<<"$out"
+check "no note under its list without a post_access_url" not grep -q "request access at" <<<"$(section zzz)"
 run -- --dry-run --sdk zzz
 check "a dry run of it passes" passes
 check "it names its catalogue page" says "https://example.invalid/zzz"
@@ -1253,6 +1468,10 @@ check "an interactive run of it passes" passes
 check "its selection reaches its download.sh" \
     called "download.sh --dest $home/Downloads/maxine/zzz-sdk --features zbeta,zgamma"
 check "it is skipped without a download" says "Skipped the Zzz SDK"
+run -- --dry-run --sdk zzz --features-zzz all
+check "all of it leaves its Early Access one out" says "Selected: zalpha, zbeta"
+run -- --dry-run --sdk zzz --features-zzz zgamma
+check "naming its Early Access one selects it, with the note" says "Note: zgamma needs Maxine Early Access approval"
 run -- --sdk zzz --features-zzz zdelta
 check "an unknown name of it is rejected" test "$status" == 2
 cat >>"$repo/scripts/setup.d/40-zzz.conf" <<'EOF'

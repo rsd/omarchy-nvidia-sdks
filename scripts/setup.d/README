@@ -102,17 +102,34 @@ Optional downloads and features added after the install (obtain=ngc only):
   catalogue     the package's download.sh: its optional downloads are read
                 from its array literals (as text) named by
   catalogue_features      the arrays of the names, in order
-  catalogue_early_access  the array of the Early Access names
+  catalogue_early_access  the array of the Early Access names: the list marks
+                          them "access required: Maxine Early Access" and,
+                          once after it, names the post_access_url pages;
+                          "all" (--features-KEY, the answer) leaves them out,
+                          and naming one (name or number) selects it with a
+                          note that it needs approval (HTTP 402 without it)
   catalogue_what          the associative array of one-line descriptions
                           (by name, else by the part before the first -)
   catalogue_default       the array of the default selection
   post_script   a script in model_dir that adds features after the install
                 (gets NGC_API_KEY in its environment, never on its argv)
   post_args     its arguments; {list} (the effects, comma separated) and
-                {out} (post_out) expand
+                {out} (post_out) expand. setup.sh runs it once per feature,
+                {list} holding that feature's effects, so that one feature
+                refused does not stop the others
   post_out      the directory it downloads into (required with post_script):
                 each run downloads into a new directory below it, and only
                 the requested features' directories are copied from there
+  post_denied   a fixed text in the script's output (its stdout and stderr,
+                with the key masked) that marks a feature the NGC account
+                has no access to (HTTP 402): that feature is reported with
+                post_access_url and skipped, the others are still copied,
+                and the refusal alone is not a failure. Without it, any
+                failure of the script stops the step
+  post_access_url  the https page where access to a feature is requested;
+                {feature} expands (to the part of an effect's name before
+                the first -); the list of the catalogue names it for the
+                Early Access effects
 
 The package's scripts (the contract setup.sh relies on), with p the
 lower-case env_prefix (MAXINE_VFX -> maxine_vfx, NVIDIA_OF -> nvidia_of):
