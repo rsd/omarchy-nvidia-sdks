@@ -1,12 +1,16 @@
 # omarchy-nvidia-sdks
 
+Local Arch Linux packages and a guided setup for the NVIDIA SDKs behind NVIDIA Broadcast-style RTX effects, built from SDKs you download yourself.
+
 ## What this is for
 
-This repository packages NVIDIA SDKs that you download yourself from NVIDIA as local Arch Linux packages, so that several projects share one install instead of each carrying its own copy. The SDKs are the NVIDIA Maxine Video Effects SDK, the Maxine AR SDK and the Maxine Audio Effects SDK, the NVIDIA Optical Flow SDK and TensorRT. The recipes are not limited to Maxine.
+**Why it exists.** NVIDIA Broadcast offers RTX effects for a webcam and a microphone: background blur, removal and replacement, video noise removal, eye contact, and microphone noise and room echo removal. NVIDIA ships no Broadcast application for Linux, but it does publish the SDKs behind these effects, and they are awkward to install and share on a Linux system. This repository turns them into local Arch Linux packages. Through the SDKs you can reach AI green screen, background blur, video noise removal, relighting and video super resolution (Maxine Video Effects), eye contact and face detection (Maxine AR), and noise removal, room echo removal and Studio Voice (Maxine Audio Effects). The NVIDIA Optical Flow SDK and TensorRT are packaged too.
 
-**Who it is for.** Users of Arch Linux or Omarchy who want applications and projects to find these SDKs in standard places: each package installs under `/opt/nvidia/` and comes with an environment file that a program loads, and none sets anything globally.
+It was made for [omarchy-broadcast](https://github.com/rsd/omarchy-broadcast), a virtual camera and microphone daemon for Omarchy that uses these SDKs on RTX GPUs. The packages do not depend on it.
 
-**What it is not.** It does not redistribute anything from NVIDIA. You download each SDK from NVIDIA with your own account, under NVIDIA's licence, and this repository holds only the build recipes: PKGBUILDs, scripts, documentation and the source of a small compatibility shim. The licence terms, and what you may and may not do with a built package, are in [Licences and caveats](#licences-and-caveats) at the end of this page. Read them before you use anything here.
+**Independent and reusable.** Any project on Arch Linux or an Arch-based distribution that needs the Maxine, Optical Flow or TensorRT headers and libraries can depend on these packages instead of carrying its own copy of an SDK. The packages are `maxine-vfx-sdk-local`, `maxine-ar-sdk-local`, `maxine-afx-sdk-local`, `nvidia-optical-flow-sdk-local` and `nvidia-tensorrt-sdk-local`. Each installs under `/opt/nvidia/` (for example `/opt/nvidia/maxine/videofx` and `/opt/nvidia/tensorrt`) with an environment file that a program loads, and none sets anything globally, so they can be installed together. How a program finds the headers, libraries and models is in [docs/usage.md](docs/usage.md).
+
+**What it is not.** It is not an NVIDIA product and NVIDIA does not support it. It does not redistribute anything from NVIDIA: you download each SDK from NVIDIA with your own account, under NVIDIA's licence, and this repository holds only the build recipes (PKGBUILDs, scripts, documentation and the source of a small compatibility shim). The effects need an NVIDIA RTX GPU (Tensor cores, Turing or newer: see [docs/gpu-support.md](docs/gpu-support.md)). The licence terms, and what you may and may not do with a built package, are in [Licences and caveats](#licences-and-caveats) at the end of this page. Read them before you use anything here.
 
 **The quickest start.** Run the guided script, with `--dry-run` first to see what it would do without changing anything:
 
