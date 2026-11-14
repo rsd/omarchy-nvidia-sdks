@@ -1,10 +1,23 @@
 # GPU support of the Maxine Video Effects SDK
 
-This page says which GPUs the SDK 1.3.0.0 (Linux) supports, how to find the architecture of your GPU, and how to fetch the models for another one. It applies to the `maxine-vfx-sdk-local` package: the package contains the models of the architectures you select, so the architecture decides what you download and what you build. What applies to the AR SDK and the Audio Effects SDK is in [AR and Audio Effects SDKs](#ar-and-audio-effects-sdks).
+This page says which GPUs the SDK 1.3.0.0 (Linux) supports, how to find the architecture of your GPU, and how to fetch the models for another one. An SDK is a software development kit: the libraries, headers and AI models a program uses. This page applies to the `maxine-vfx-sdk-local` package. The package contains the models of the architectures you select, so the architecture decides what you download and what you build. What applies to the AR SDK and the Audio Effects SDK is in [AR and Audio Effects SDKs](#ar-and-audio-effects-sdks).
+
+## Quick start
+
+1. Ask the driver for your GPU's compute capability (a number that names the GPU generation):
+
+   ```bash
+   nvidia-smi --query-gpu=compute_cap --format=csv,noheader
+   ```
+
+   *Success:* it prints one line per GPU, such as `12.0`.
+2. Remove the dot and put `sm_` in front. `12.0` is `sm_120`, and `8.6` is `sm_86`. That is your architecture.
+3. Look it up in [Architectures with models in 1.3.0.0 Linux](#architectures-with-models-in-1300-linux). If it is below 7.5, or not in the table, this SDK cannot use your GPU.
+4. Pass it where a command asks for it, for example `maxine-vfx/download.sh --archs sm_120`. If you leave `--archs` out, `download.sh` detects the architecture itself.
 
 ## Requirements
 
-- **An NVIDIA GPU with Tensor Cores: Turing (`sm_75`) or newer.**
+- **An NVIDIA GPU with Tensor Cores (the AI hardware of RTX cards): Turing (`sm_75`, the RTX 20 series) or newer.**
 - **Pascal and older are not supported.** A GTX 1080 (`sm_61`) and every earlier GPU cannot run the SDK's models.
 - **Volta (`sm_70`) has no 1.3.0.0 Linux models.** NVIDIA publishes no model package for it in this version.
 - **Driver 570.26 or newer.** The SDK bundles CUDA 12.8, cuDNN 9 and TensorRT 10.9 and takes only `libcuda.so.1` from the driver.
@@ -31,7 +44,7 @@ Notes on the table:
 
 ## Find your architecture
 
-Look it up once, by hand:
+Look it up once, by hand (the same command as in the quick start):
 
 ```bash
 nvidia-smi --query-gpu=compute_cap --format=csv,noheader

@@ -1,10 +1,46 @@
 # Using the Maxine SDK packages
 
-This page is for programs and projects that load a Maxine SDK installed by one of three packages: `maxine-vfx-sdk-local` (Video Effects), `maxine-ar-sdk-local` (AR) or `maxine-afx-sdk-local` (Audio Effects). Each package installs this page as `/usr/share/doc/<package>/usage.md`. The sections from "What the package installs" to "Troubleshooting" describe the Video Effects package. The [Maxine AR SDK](#maxine-ar-sdk) and [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) sections describe the other two, which follow the same pattern: an environment file you load for one program, a shim you preload on that program, and no global setting. [Why nothing is global](#why-nothing-is-global) says why.
+This page is for programs and projects that load a Maxine SDK after one of three packages installed it: `maxine-vfx-sdk-local` (Video Effects), `maxine-ar-sdk-local` (AR) or `maxine-afx-sdk-local` (Audio Effects). Maxine is NVIDIA's family of AI video and audio effects. Each package installs this page as `/usr/share/doc/<package>/usage.md`.
+
+The sections from "What the package installs" to "Troubleshooting" describe the Video Effects package. The [Maxine AR SDK](#maxine-ar-sdk) and [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) sections describe the other two, which follow the same pattern:
+
+- an environment file (a text file of `KEY=value` settings) that you load for one program;
+- a shim (a small library that makes the SDK accept your distribution) that you preload on that program;
+- no global setting.
+
+[Why nothing is global](#why-nothing-is-global) says why.
 
 For the Optical Flow SDK and TensorRT packages, see [Other packages](#other-packages-optical-flow-and-tensorrt). For building the packages, see [download.md](download.md), [../maxine-vfx/README.md](../maxine-vfx/README.md), [../maxine-ar/README.md](../maxine-ar/README.md) and [../maxine-afx/README.md](../maxine-afx/README.md). For supported GPUs and architectures, see [gpu-support.md](gpu-support.md).
 
 The package contains NVIDIA software and is for your own machine only; see the "Licence and personal use" section of the [README](../README.md). NVIDIA does not support this configuration (Arch, distributions the SDK does not list, client-side use).
+
+## Quick start
+
+Install the package first (see the [README](../README.md#quick-start)). Then, for the Video Effects package, run any program that uses it like this. Replace `<program>` with the program's command. For the AR and Audio Effects packages, use the commands in their sections below.
+
+1. Load the environment file in your shell. This sets the library paths for this shell only:
+
+   ```bash
+   set -a; . /usr/share/maxine-vfx/maxine-vfx.env; set +a
+   ```
+
+2. Start the program with the shim preloaded:
+
+   ```bash
+   env LD_PRELOAD=$MAXINE_VFX_OS_RELEASE_SHIM <program> [args]
+   ```
+
+3. Check the installation. With the environment file loaded, the `ldd` command prints nothing when every library is found:
+
+   ```bash
+   pacman -Ql maxine-vfx-sdk-local | head
+   (set -a; . /usr/share/maxine-vfx/maxine-vfx.env; set +a
+    ldd /opt/nvidia/maxine/videofx/lib/libVideoFXLocal.so | grep 'not found')
+   ```
+
+If a call fails, find its error code in [Troubleshooting](#troubleshooting). The most common is `-1209` ("no kernel image is available"), which means the shim is not preloaded on the program itself.
+
+Do not put the `set -a` line in `~/.bashrc` or another login file. The bundled libraries would then replace the system's for every program you start.
 
 ## What the package installs
 

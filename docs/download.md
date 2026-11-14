@@ -1,13 +1,45 @@
 # Downloading the Maxine SDKs
 
-The `maxine-vfx-sdk-local`, `maxine-ar-sdk-local` and `maxine-afx-sdk-local` packages are built from files you download yourself from NVIDIA NGC after accepting NVIDIA's licence. This repository does not contain, and cannot provide, any of those files. This page is a step-by-step guide for the Video Effects SDK 1.3.0.0 (Linux). The [Maxine AR SDK](#maxine-ar-sdk) 1.2.0.0 and the [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) 3.0.0 have their own sections further down; they use the same prerequisites and the same NGC CLI. Until those sections, the commands and names on this page are the Video Effects ones (`maxine-vfx/download.sh`).
+Maxine is NVIDIA's family of AI video and audio effects. The `maxine-vfx-sdk-local`, `maxine-ar-sdk-local` and `maxine-afx-sdk-local` packages are built from files you download yourself from NGC after you accept NVIDIA's licence. NGC (NVIDIA GPU Cloud) is NVIDIA's online catalogue, and `ngc` is its command line tool. This repository does not contain, and cannot provide, any of those files.
 
-There are two ways to download. [`scripts/setup.sh`](../scripts/setup.sh), described in [setup.md](setup.md), walks through both and the build and installation as well.
+This page is a step-by-step guide for the Video Effects SDK 1.3.0.0 (Linux). An SDK is a software development kit: the libraries, headers and AI models a program uses. The [Maxine AR SDK](#maxine-ar-sdk) 1.2.0.0 and the [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) 3.0.0 have their own sections further down. They use the same prerequisites and the same NGC tool. Until those sections, the commands and names on this page are the Video Effects ones (`maxine-vfx/download.sh`).
+
+There are two ways to download. [`scripts/setup.sh`](../scripts/setup.sh), described in [setup.md](setup.md), walks through both, and through the build and installation as well.
 
 - **Automated:** [`maxine-vfx/download.sh`](../maxine-vfx/download.sh) detects your GPU, shows what it would download and how big it is, asks for confirmation, and fetches only what is missing. See [Download with one command](#download-with-one-command).
 - **Manual:** the same `ngc` commands, written out. See [Download by hand](#download-by-hand).
 
-Both need the prerequisites below and both use your own, configured NGC CLI. Read the licence terms shown at the NGC pages before you accept them. See the "Licence and personal use" section of the [README](../README.md).
+Both need the prerequisites below, and both use your own configured NGC tool. Read the licence terms on the NGC pages before you accept them. See the "Licence and personal use" section of the [README](../README.md).
+
+## Quick start
+
+Do these in order. Steps 1 and 2 are yours: they need your NVIDIA login and your key. An AI agent can run steps 3 to 5.
+
+1. **Set up NGC once.** Follow [Prerequisites](#prerequisites) steps 1 to 4 below: join the NVIDIA Developer Program, select **Get Access**, create an API key, install `ngc` and run `ngc config set`. You enter the key only at the prompt of `ngc config set`. Never paste it into a chat or give it to an AI agent.
+2. **Check that NGC accepts your key.** It is read-only and never prints the key:
+
+   ```bash
+   scripts/check-ngc.sh
+   ```
+
+   *Success:* every line says `OK`. If a line says `FAIL`, read its hint, then see [Troubleshooting](#troubleshooting).
+3. **Look at what would be downloaded.** Nothing is downloaded or created:
+
+   ```bash
+   maxine-vfx/download.sh --dry-run
+   ```
+
+   *Success:* it prints a table with the size and status of each item (`missing` on a first run) and the `ngc` commands it would run.
+4. **Download.** It asks `Download N items (X GiB) into DIR? [y/N]`. Answer `y`:
+
+   ```bash
+   maxine-vfx/download.sh
+   ```
+
+   *Success:* the script prints the next commands, and your files are in `~/Downloads/maxine`. If it stops, run the same command again: it skips what is complete.
+5. **Build and install.** Run the commands the script printed (see [Next step](#next-step)), or use `scripts/setup.sh --sdk vfx` to do both with questions. The build is `configure.sh` then `makepkg`; the install is `sudo pacman -U`, which you confirm yourself.
+
+For the AR and Audio Effects SDKs, use `maxine-ar/download.sh` and `maxine-afx/download.sh` the same way.
 
 ## Prerequisites
 
@@ -16,28 +48,28 @@ Both need the prerequisites below and both use your own, configured NGC CLI. Rea
 | GPU | NVIDIA, compute capability 7.5 or newer (Turing and later) | `nvidia-smi --query-gpu=name,compute_cap --format=csv` |
 | Driver | 570.26 or newer | `nvidia-smi --query-gpu=driver_version --format=csv,noheader` |
 | System CUDA toolkit | Not needed. The SDK bundles CUDA 12.8, cuDNN 9 and TensorRT 10 and takes only `libcuda.so.1` from the driver (`nvidia-utils`) | |
-| Tools | `curl`, `unzip`, `jq` (to install the NGC CLI) | `pacman -S --needed curl unzip jq` |
+| Tools | `curl` (downloads files), `unzip` and `jq` (reads JSON), to install the NGC CLI | `sudo pacman -S --needed curl unzip jq` |
 | Disk | The default download (SDK core, three feature libraries, two model sets, one architecture) is about 2.75 GiB. The extracted SDK tree is 4.4 GiB (4,671,229,191 bytes), the built package (`PKGEXT=.pkg.tar`) is about 4.4 GiB too. With all eight features and `sm_120` models the tree is 5,054,183,158 bytes (4.71 GiB) and the package about 4.7 GiB. `makepkg` needs space for its working copy as well. More features and architectures add to this: see [Sizes](#sizes) | `df -h ~` |
 
 ### 1. NVIDIA account and access (manual)
 
-A plain NGC account is not enough. A free NVIDIA Developer Program membership gives Maxine access; NVIDIA AI Enterprise is not required.
+A plain NGC account is not enough. A free NVIDIA Developer Program membership gives you Maxine access. You do not need NVIDIA AI Enterprise.
 
 1. Create or log in to an NVIDIA Developer Program account. Use this one account for NGC, the Developer Program and the API key in step 2.
 2. Open <https://catalog.ngc.nvidia.com/orgs/nvidia/maxine/resources/vfx_sdk_core> ("NVIDIA Video Effects SDK Core") and log in.
 3. Under "NVIDIA Developer Program", select **Get Access** and accept the terms.
 
-The API key in step 2 must come from the account and organisation that hold this access. Otherwise downloads fail with an access error (see [Troubleshooting](#troubleshooting)).
+The API key in step 2 must come from the account and organisation that hold this access. If it does not, downloads fail with an access error (see [Troubleshooting](#troubleshooting)).
 
 ### 2. Personal API key (manual)
 
 1. Open <https://org.ngc.nvidia.com/setup/personal-keys> and select **Generate Personal Key**.
 2. Include the **NGC Catalog** service. Choose an expiry you are comfortable with.
-3. Copy the key (`nvapi-...`) immediately; it is shown once. Keep it out of any repository and out of your shell history. You enter it in `ngc config set` in step 4.
+3. Copy the key (`nvapi-...`) at once: NGC shows it only once. Keep it out of any repository and out of your shell history. You enter it in `ngc config set` in step 4.
 
 ### 3. Install the NGC CLI
 
-Arch has no package for the NGC CLI. Install the official zip into your user prefix. Pin the version in `NGC_VER`; 4.36.6 was current when this page was written, and the newest version is the first entry of the version list.
+Arch has no package for the NGC command line tool, so you install NVIDIA's zip into your home directory. The first command below prints the newest version. Set that version in `NGC_VER`. Version 4.36.6 was current when this page was written.
 
 ```bash
 # newest published version
@@ -60,7 +92,7 @@ cd ~ && rm -rf "$D"
 ngc --version
 ```
 
-`~/.local/bin` must be on `PATH`.
+`~/.local/bin` must be on your `PATH` (the list of folders the shell searches for commands). The last command prints the version when the install worked.
 
 ### 4. Configure the NGC CLI (manual)
 
@@ -83,7 +115,7 @@ Check access (read-only):
 ngc registry resource info nvidia/maxine/vfx_sdk_core:1.3.0.0_linux
 ```
 
-This prints the details of the SDK core. If it fails, see [Troubleshooting](#troubleshooting). `scripts/check-ngc.sh` checks this and more in one run: see [Check your NGC credentials](#check-your-ngc-credentials).
+This prints the details of the SDK core, which means your key and access work. If it fails, see [Troubleshooting](#troubleshooting). `scripts/check-ngc.sh` checks this and more in one run: see [Check your NGC credentials](#check-your-ngc-credentials).
 
 ## Check your NGC credentials
 
@@ -139,7 +171,7 @@ maxine-vfx/download.sh
 
 With no options the script:
 
-1. detects your GPU architecture with `nvidia-smi`;
+1. detects your GPU architecture with `nvidia-smi` (its `sm_` name: `sm_120` for an RTX 50 series card);
 2. selects the `broadcast` preset: AI green screen, background blur and video noise removal, plus the SDK core;
 3. asks NGC for the size of every item (read-only) and prints a table: item, size, number of files and status (present, missing, incomplete, no model package, unavailable, or probe failed when NGC gave another error such as a timeout or a 5xx: that item is not downloaded and the run fails);
 4. asks `Download N items (X GiB) into DIR? [y/N]`;

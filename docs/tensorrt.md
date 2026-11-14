@@ -1,33 +1,62 @@
 # The TensorRT package
 
-This page is for the person who builds `nvidia-tensorrt-sdk-local` and for programs that use it. The package is built from your own download of NVIDIA TensorRT 11.4.0.106 for CUDA 13.4 and installs it, as shipped, under `/opt/nvidia/tensorrt`, isolated from the system: for example so that an ONNX Runtime build can use the TensorRT execution provider. Arch's `cuda` package provides the CUDA 13 runtime it runs on.
+TensorRT is NVIDIA's library for running AI models fast on its GPUs. This page is for the person who builds `nvidia-tensorrt-sdk-local` and for programs that use it. You build the package from your own download of NVIDIA TensorRT 11.4.0.106 for CUDA 13.4 (CUDA is NVIDIA's GPU computing platform). It installs TensorRT, as shipped, under `/opt/nvidia/tensorrt`, isolated from the system: for example so that an ONNX Runtime build can use the TensorRT execution provider. Arch's `cuda` package provides the CUDA 13 runtime it runs on.
 
 The recipe's own reference, with every build input, is [../nvidia-tensorrt/README.md](../nvidia-tensorrt/README.md). `scripts/setup.sh --sdk trt` runs the steps below for you; see [setup.md](setup.md).
 
 The package contains NVIDIA software and is for your own machine only; see the "Licence and personal use" section of the [README](../README.md) and [Licence notes](#licence-notes) below. NVIDIA does not support this configuration (Arch Linux, a package built by a third-party recipe).
 
+## Quick start
+
+You need an NVIDIA RTX GPU, an Arch-based distribution, the NVIDIA driver, the `cuda` package (version 13.4 or newer, below 14) and a free NVIDIA Developer Program account. TensorRT needs no NGC account and no API key.
+
+1. **Download the file. This step is yours** (it needs your NVIDIA login and your acceptance of NVIDIA's licence). Open <https://developer.nvidia.com/tensorrt/download>, log in, accept the licence and download `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst`. Save it in `~/Downloads`. Take the Linux x86_64 build for CUDA 13.4, not the ARM build and not the `cuda-12.9` build (see [Download](#download)).
+2. **Optional: install `cuda` first.** It is a large download, and `pacman -U` also pulls it in from Arch's repositories when it is missing:
+
+   ```bash
+   sudo pacman -S --needed cuda
+   ```
+
+3. **Look first.** This is read-only:
+
+   ```bash
+   scripts/setup.sh --sdk trt --dry-run
+   ```
+
+   *Success:* the output ends with `Dry run: nothing was asked, run or written.` If it finds no archive, it prints the download steps: do step 1 first.
+4. **Build and install.** The script asks before each step and runs `sudo pacman -U` only after you answer `y`:
+
+   ```bash
+   scripts/setup.sh --sdk trt
+   ```
+
+   *Success:* section `7. Check` shows `ok` for `trt`, and the exit status is 0.
+5. **Check by hand** (see [Check the installation](#check-the-installation)): both version lines must read `11.4.0.106`.
+
+If it fails, see [Troubleshooting](#troubleshooting). The two usual causes are the wrong archive (ARM, or `cuda-12.9`) and no archive in the directory the script searches (`~/Downloads`, or the place you gave with `--src-trt PATH`).
+
 ## Download
 
-NVIDIA publishes TensorRT behind a Developer Program login and a licence. Nothing in this repository downloads it for you.
+NVIDIA publishes TensorRT behind a Developer Program login and a licence, so you download it yourself in a browser. Nothing in this repository downloads it for you.
 
 1. Sign in to the NVIDIA Developer Program, or create an account, at <https://developer.nvidia.com/tensorrt/download>.
 2. Read and accept the TensorRT Software License Agreement (<https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html>), then select "Accept & Download".
 3. Choose TensorRT 11.4.0.106, Linux x86_64, the TAR package for CUDA 13.4. The file is `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst`, with SHA-256 `c67c87674cbe7b2337d1c30cb16d48686ab79ecb11bf08cb764b71f4f2bb711b` (the checksum published in the AUR's `tensorrt` recipe).
 4. Save it in `~/Downloads` (where `scripts/setup.sh` looks), or anywhere else, and pass its location with `--src-trt PATH` or `NVIDIA_TRT_SRC`. Keep only one `TensorRT-*.tar.*` archive in the directory you name.
 
-Take care to download the right file:
+Download the right file:
 
 - **The `cuda-13.4` file, not the `cuda-12.9` build of the same version.** The package depends on CUDA 13.4. A `cuda-12.9` archive is refused with "not the archive this recipe packages".
 - **The Linux x86_64 file, not the ARM (aarch64) one.** NVIDIA has so far published TensorRT 11.4.1 for ARM only, so a newer version number on the download page is not necessarily an x86_64 build. This recipe packages 11.4.0.106. The recipe and `setup.sh` refuse an ARM archive by its file name, by its contents (aarch64 Python wheels, or a `targets/aarch64-linux-gnu` or `targets/sbsa-linux` directory) and, for an extracted tree, by the machine type of `libnvinfer`.
 - If the directory you name holds one x86_64 archive and also ARM ones, the x86_64 one is used and the ARM ones are reported as skipped. If it holds two x86_64 archives, name the one you mean.
 
-The recipe pins that SHA-256 and refuses another file, so a damaged or different download stops the build with a message naming both hashes. Then build and install, either with the guided script (it prints each command and asks before running it):
+The recipe pins that SHA-256 and refuses another file, so a damaged or different download stops the build with a message naming both hashes. Then build and install. Either use the guided script, which prints each command and asks before running it:
 
 ```bash
 scripts/setup.sh --sdk trt
 ```
 
-or by hand:
+or do it by hand:
 
 ```bash
 cd nvidia-tensorrt
@@ -36,7 +65,7 @@ PKGEXT=.pkg.tar makepkg -f
 sudo pacman -U nvidia-tensorrt-sdk-local-11.4.0.106-1-x86_64.pkg.tar
 ```
 
-The package is several GiB, so `PKGEXT=.pkg.tar` skips a slow compression, and the build needs free space for the extracted tree, its copy in `pkg/` and the package. The source can also be an extracted tree, which has no checksum and only has its version checked.
+The package is several GiB (a GiB is about a billion bytes), so `PKGEXT=.pkg.tar` skips a slow compression. The build needs free space for the extracted tree, its copy in `pkg/` and the package. The source can also be an extracted tree, which has no checksum and only has its version checked.
 
 **A future release without a published checksum.** The `_trt_sha256=` line of the PKGBUILD can be left empty when a release's checksum is not published anywhere you can verify it. The archive must then carry the recipe's `_trt_archive` name, and nothing pins its content: `configure.sh --write` records the SHA-256 of the archive it saw, the PKGBUILD verifies the archive it builds from against that recorded sum, and otherwise prints the sum as "not pinned" for you to compare with NVIDIA's download page. The release in this recipe is pinned.
 

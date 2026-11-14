@@ -1,8 +1,46 @@
 # Guided setup
 
-`scripts/setup.sh` takes you from nothing to installed local packages of the SDKs you download yourself. It knows five SDKs and one placeholder: the Maxine Video Effects, AR and Audio Effects SDKs (downloaded from NGC), the Optical Flow SDK and TensorRT (each one file, downloaded in a browser), and a Maxine Early Access entry that is not installable yet. It checks your machine, finds and validates your download of each SDK, lets you choose the optional features, runs `configure.sh` and `makepkg`, installs the package, adds Audio Effects effects after the install if you ask for them, checks the result and prints the commands that undo it.
+`scripts/setup.sh` takes you from nothing to installed packages of the NVIDIA SDKs (software development kits: libraries, headers and AI models) that you download yourself. It runs the steps one at a time, shows each command before it runs it, and asks before it changes anything.
 
-It is a convenience over the per-package steps in [download.md](download.md) and the package READMEs, not a replacement for them. Every step it runs is printed first as a command you could type yourself, so the whole procedure can also be done by hand. The licence terms in the "Licence and personal use" section of the [README](../README.md) apply unchanged: you accept NVIDIA's licence and you download the SDK with your own account.
+It knows five SDKs and one placeholder:
+
+- The Maxine Video Effects, AR and Audio Effects SDKs, downloaded from NGC (NVIDIA's online catalogue, NVIDIA GPU Cloud).
+- The Optical Flow SDK and TensorRT (NVIDIA's library for running AI models fast), each one file that you download in a browser.
+- A Maxine Early Access entry that is not installable yet.
+
+## Quick start
+
+You need an NVIDIA RTX GPU, an Arch-based distribution, the NVIDIA driver and a free NVIDIA Developer Program account. The [README](../README.md#quick-start) lists the full prerequisites and a table of which steps need you and which an AI agent can run.
+
+1. Look first. This is read-only and changes nothing:
+
+   ```bash
+   scripts/setup.sh --dry-run
+   ```
+
+   *Success:* the output ends with `Dry run: nothing was asked, run or written.` Fix every line that contains `WARNING`.
+
+2. Download your SDK. **This step is yours.** For a Maxine SDK, log in to NVIDIA, accept the licence on its NGC page, create an API key, install the `ngc` tool and run `ngc config set` yourself (steps in [download.md](download.md#prerequisites)). For the Optical Flow SDK or TensorRT, download the file in a browser into `~/Downloads`. Never paste a key into a chat or give it to an AI agent.
+
+3. Run the script for the SDK you want (`vfx`, `ar`, `afx`, `of` or `trt`):
+
+   ```bash
+   scripts/setup.sh --sdk vfx
+   ```
+
+   It asks before each step. The default answer is No. It runs `sudo` only to install the package you built, after you answer `y`.
+
+4. Check the result. *Success:* section `7. Check` shows `ok` in every column for your SDK, and the exit status is 0 (`echo $?` prints `0`).
+
+5. If a step fails, find the message in the README's [If something fails](../README.md#if-something-fails) table or in [Troubleshooting](download.md#troubleshooting).
+
+The rest of this page explains each part.
+
+## What the script does
+
+It checks your machine, finds and validates your download of each SDK, and lets you choose the optional features. It runs `configure.sh` (which saves your choice of features and GPU) and `makepkg` (Arch's tool that builds a package from a `PKGBUILD` recipe). It installs the package, adds Audio Effects effects after the install if you ask for them, checks the result and prints the commands that undo it.
+
+The script is a convenience over the per-package steps in [download.md](download.md) and the package READMEs. It does not replace them. It prints every step first as a command you could type yourself, so you can also do the whole procedure by hand. The licence terms in the "Licence and personal use" section of the [README](../README.md) apply unchanged: you accept NVIDIA's licence and you download the SDK with your own account.
 
 ## Start with a dry run
 
@@ -10,7 +48,7 @@ It is a convenience over the per-package steps in [download.md](download.md) and
 scripts/setup.sh --dry-run
 ```
 
-A dry run is read-only. It runs the preflight checks and the detection of your downloads, asks nothing, writes nothing, runs no `sudo`, and prints every command it would run. It takes the default selection of optional features. Run it first to see what the real run would do on your machine. `--print-commands` is an alias.
+A dry run is read-only. It runs the preflight checks and detects your downloads. It asks nothing, writes nothing, runs no `sudo` and prints every command it would run. It takes the default selection of optional features. Run it first to see what the real run would do on your machine. `--print-commands` is an alias.
 
 Then run the script for real:
 
@@ -18,7 +56,7 @@ Then run the script for real:
 scripts/setup.sh
 ```
 
-Without `--sdk` it asks, for each SDK, whether to set it up (Video Effects, AR, Audio Effects, Optical Flow, TensorRT, and the Early Access entry). Every question defaults to No: an empty answer or the end of input means No.
+Without `--sdk` it asks, for each SDK, whether to set it up (Video Effects, AR, Audio Effects, Optical Flow, TensorRT and the Early Access entry). Every question defaults to No: an empty answer or the end of input means No. Name the SDKs with `--sdk` to skip those questions.
 
 ## Options
 
@@ -68,13 +106,13 @@ Running the script again is safe. What is already done is detected and kept: a v
 
 ### 1. Preflight
 
-Read-only. The script reports what it finds and explains how to fix what is missing, but it fixes nothing.
+Read-only. The script reports what it finds and explains how to fix what is missing. It fixes nothing itself.
 
-- Arch Linux and `pacman`. Without `pacman` or without `makepkg` the script stops.
-- `base-devel`, `fakeroot` and `bsdtar` (warnings, with the `pacman -S --needed` command to install them).
+- Arch Linux and `pacman` (the package manager). Without `pacman` or without `makepkg` the script stops.
+- `base-devel` (the group that holds `makepkg` and the build tools), `fakeroot` and `bsdtar` (warnings, with the `pacman -S --needed` command to install them).
 - The GPU, driver and compute capability from `nvidia-smi`, the resulting `sm_<N>` architecture, a warning for a GPU older than Turing (`sm_75`) or a driver older than 570.26. `nvidia-smi` is queried once, which wakes a sleeping discrete GPU.
 - Free disk space for the download directory (at least 3 GiB) and for the build directory (13.2 GiB for one SDK: the assembled tree of about 4.4 GiB, `makepkg`'s copy of it and the package). Both figures are sized for the Video Effects SDK; the TensorRT package is several GiB as well, and the Optical Flow SDK is much smaller.
-- Whether the NGC CLI is on `PATH`. It is needed only by `download.sh`, so only for the NGC SDKs.
+- Whether the NGC CLI (the `ngc` command line tool) is on `PATH`. Only `download.sh` needs it, so only the NGC SDKs.
 
 ### 2. Your download
 
@@ -82,7 +120,7 @@ For each SDK you chose, the script finds the download directory and validates it
 
 Before the download is checked, you choose the SDK's optional features. The script shows a numbered list of every optional feature of the SDK, with the default selection marked `[x]` and the features that need NVIDIA's approval marked `[access required: Maxine Early Access]`, followed by the page where to request it. The list is read from the package's `download.sh`, so it is the list of `download.sh --features`. Answer with numbers or names, `all`, or Enter for the default. `--help` prints the lists without running anything. The features are fetched together with the SDK, before the build, so the package contains them and pacman owns them.
 
-If the download is valid but lacks a selected feature, the script prints the `download.sh --features` command for the missing ones. If there is no usable download, it prints the manual steps and waits:
+If the download is valid but lacks a selected feature, the script prints the `download.sh --features` command for the missing ones. If there is no usable download, it prints the manual steps and waits. These steps are yours:
 
 1. Create or log in to your NVIDIA Developer Program account (a plain NGC account is not enough).
 2. Open the SDK's catalogue page, log in, select Get Access under NVIDIA Developer Program and accept NVIDIA's licence.

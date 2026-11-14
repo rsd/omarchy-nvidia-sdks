@@ -1,52 +1,127 @@
 # omarchy-nvidia-sdks
 
-Local Arch Linux packages and a guided setup for the NVIDIA SDKs behind NVIDIA Broadcast-style RTX effects, built from SDKs you download yourself.
+Local Arch Linux packages and a guided setup for the NVIDIA SDKs (software development kits: the libraries, headers and AI models a program uses) behind NVIDIA Broadcast-style RTX effects. You download each SDK yourself, and this repository builds it into a package for your own machine.
 
 ## What this is for
 
-**Why it exists.** NVIDIA Broadcast offers RTX effects for a webcam and a microphone: background blur, removal and replacement, video noise removal, eye contact, and microphone noise and room echo removal. NVIDIA ships no Broadcast application for Linux, but it does publish the SDKs behind these effects, and they are awkward to install and share on a Linux system. This repository turns them into local Arch Linux packages. Through the SDKs you can reach AI green screen, background blur, video noise removal, relighting and video super resolution (Maxine Video Effects), eye contact and face detection (Maxine AR), and noise removal, room echo removal and Studio Voice (Maxine Audio Effects). The NVIDIA Optical Flow SDK and TensorRT are packaged too.
+**Why it exists.** NVIDIA Broadcast offers RTX effects for a webcam and a microphone: background blur, removal and replacement, video noise removal, eye contact, and microphone noise and room echo removal. (RTX is NVIDIA's GPU line with AI hardware, the Tensor cores.) NVIDIA ships no Broadcast application for Linux, but it does publish the SDKs behind these effects, and they are awkward to install and share on a Linux system. This repository turns them into local Arch Linux packages.
+
+Through the SDKs you can reach:
+
+- **Maxine Video Effects** (Maxine is NVIDIA's family of AI video and audio effects): AI green screen, background blur, video noise removal, relighting and video super resolution.
+- **Maxine AR**: eye contact and face detection.
+- **Maxine Audio Effects**: noise removal, room echo removal and Studio Voice.
+
+The NVIDIA Optical Flow SDK and TensorRT (NVIDIA's library for running AI models fast on its GPUs) are packaged too.
 
 It was made for [omarchy-broadcast](https://github.com/rsd/omarchy-broadcast), a virtual camera and microphone daemon for Omarchy that uses these SDKs on RTX GPUs. The packages do not depend on it.
 
-**Independent and reusable.** Any project on Arch Linux or an Arch-based distribution that needs the Maxine, Optical Flow or TensorRT headers and libraries can depend on these packages instead of carrying its own copy of an SDK. The packages are `maxine-vfx-sdk-local`, `maxine-ar-sdk-local`, `maxine-afx-sdk-local`, `nvidia-optical-flow-sdk-local` and `nvidia-tensorrt-sdk-local`. Each installs under `/opt/nvidia/` (for example `/opt/nvidia/maxine/videofx` and `/opt/nvidia/tensorrt`) with an environment file that a program loads, and none sets anything globally, so they can be installed together. How a program finds the headers, libraries and models is in [docs/usage.md](docs/usage.md).
+**Independent and reusable.** Any project on Arch Linux or an Arch-based distribution that needs the Maxine, Optical Flow or TensorRT headers and libraries can depend on these packages instead of carrying its own copy of an SDK. The packages are `maxine-vfx-sdk-local`, `maxine-ar-sdk-local`, `maxine-afx-sdk-local`, `nvidia-optical-flow-sdk-local` and `nvidia-tensorrt-sdk-local`. Each installs under `/opt/nvidia/` (for example `/opt/nvidia/maxine/videofx` and `/opt/nvidia/tensorrt`) with an environment file that a program loads. None sets anything globally, so you can install them together. [docs/usage.md](docs/usage.md) explains how a program finds the headers, libraries and models.
 
-**What it is not.** It is not an NVIDIA product and NVIDIA does not support it. It does not redistribute anything from NVIDIA: you download each SDK from NVIDIA with your own account, under NVIDIA's licence, and this repository holds only the build recipes (PKGBUILDs, scripts, documentation and the source of a small compatibility shim). The effects need an NVIDIA RTX GPU (Tensor cores, Turing or newer: see [docs/gpu-support.md](docs/gpu-support.md)). The licence terms, and what you may and may not do with a built package, are in [Licences and caveats](#licences-and-caveats) at the end of this page. Read them before you use anything here.
-
-**The quickest start.** Run the guided script, with `--dry-run` first to see what it would do without changing anything:
-
-```bash
-scripts/setup.sh --dry-run
-scripts/setup.sh
-```
-
-You still log in, accept NVIDIA's licence and download the SDK yourself; the script prints the steps and waits. See [Quick start](#quick-start) and [docs/setup.md](docs/setup.md).
-
-## What is included
-
-| Directory | Package | Contents |
-|---|---|---|
-| [`maxine-vfx/`](maxine-vfx/) | `maxine-vfx-sdk-local` | NVIDIA Maxine Video Effects SDK 1.3.0.0: the features and GPU architectures you download and select. The download helper fetches AI green screen, background blur and video noise removal by default |
-| [`maxine-ar/`](maxine-ar/) | `maxine-ar-sdk-local` | NVIDIA Maxine AR SDK 1.2.0.0: eye contact (gaze redirection), face box detection, facial landmarks, face expressions and the other documented AR features. The download helper fetches eye contact with the two features it depends on by default |
-| [`maxine-afx/`](maxine-afx/) | `maxine-afx-sdk-local` | NVIDIA Maxine Audio Effects SDK 3.0.0 (package version 3.0.0.12): noise removal, room echo removal, both together and Studio Voice, at the sample rates you download. The download helper fetches those four at 48 kHz by default |
-| [`nvidia-optical-flow/`](nvidia-optical-flow/) | `nvidia-optical-flow-sdk-local` | NVIDIA Optical Flow SDK 5.0.7 from your own `optical_flow_sdk_5.0.7.zip`: the headers, the FRUC (frame rate up-conversion) library when your download has it, and the samples and NvOFTracker as source, under `/opt/nvidia/optical-flow`. The runtime library comes from the NVIDIA driver. Guide: [docs/optical-flow.md](docs/optical-flow.md) |
-| [`nvidia-tensorrt/`](nvidia-tensorrt/) | `nvidia-tensorrt-sdk-local` | NVIDIA TensorRT 11.4.0.106 for Linux x86_64 and CUDA 13.4 from your own archive (the ARM build is refused), installed as shipped under `/opt/nvidia/tensorrt`, with a pkg-config file and an environment file. It sits beside the AUR's `tensorrt`, which installs into `/usr`. Guide: [docs/tensorrt.md](docs/tensorrt.md) |
-
-The three Maxine packages follow the same pattern: you download the SDK from NGC, you choose the features and GPU architectures, and `makepkg` builds one package from your download. Each installs under its own `/opt/nvidia/maxine/` directory and its own environment file, and none sets anything globally, so they can be installed together. The Optical Flow SDK and TensorRT packages are simpler: one file that you download in a browser after accepting NVIDIA's licence, with no features or architectures to choose. They install under `/opt/nvidia/optical-flow` and `/opt/nvidia/tensorrt`, with their own environment files, and can be installed beside the others. `scripts/setup.sh` also lists a Maxine Early Access entry, a placeholder that only prints how to request access. The sections up to [Not limited to one GPU or to today's features](#not-limited-to-one-gpu-or-to-todays-features) describe the Video Effects package; [the AR and Audio Effects packages](#the-ar-and-audio-effects-packages) follow.
+**What it is not.** It is not an NVIDIA product, and NVIDIA does not support it. It does not redistribute anything from NVIDIA. You download each SDK from NVIDIA with your own account, under NVIDIA's licence. This repository holds only the build recipes (PKGBUILDs, scripts, documentation and the source of a small compatibility shim). The effects need an NVIDIA RTX GPU (Tensor cores, Turing or newer: see [docs/gpu-support.md](docs/gpu-support.md)). The licence terms, and what you may and may not do with a built package, are in [Licences and caveats](#licences-and-caveats) at the end of this page. Read them before you use anything here.
 
 ## Quick start
 
-You need an NVIDIA Developer Program account. For the Maxine SDKs you also need the NGC CLI and `ngc config set` run by yourself: [docs/download.md](docs/download.md#prerequisites) has the steps, and `scripts/check-ngc.sh` checks the result (see [Check your NGC credentials](#check-your-ngc-credentials)). For the Optical Flow SDK and TensorRT you download one file in a browser instead: see [docs/optical-flow.md](docs/optical-flow.md#download) and [docs/tensorrt.md](docs/tensorrt.md#download).
+This is the shortest path from nothing to an installed package. Every command runs from the root of this repository.
 
-**Guided.** `scripts/setup.sh` takes you through the whole procedure for any of the five SDKs (`vfx`, `ar`, `afx`, `of`, `trt`; `--sdk LIST` picks them): checks of your machine, detection of your download, the optional features of a Maxine SDK, `configure.sh`, `makepkg`, the installation, a check of the result and the commands to undo it. It asks before every step that changes anything (the default answer is No) and prints each command it runs. Look first, then run it:
+### Before you start
 
-```bash
-scripts/setup.sh --dry-run
-scripts/setup.sh
-```
+You need all of these:
 
-Login, licence acceptance and `ngc config set` stay with you, and so does the browser download of the Optical Flow SDK and TensorRT: the script prints the steps and waits. The steps, the options and what the script does with `sudo` are in [docs/setup.md](docs/setup.md).
+- **An NVIDIA RTX GPU**, Turing (RTX 20 series) or newer.
+- **Arch Linux or an Arch-based distribution** (for example Omarchy). It must have `pacman` (the package manager), `makepkg` (the tool that builds a package from a `PKGBUILD` recipe) and `fakeroot` and `bsdtar` (helper tools `makepkg` uses). `sudo pacman -S --needed base-devel fakeroot libarchive` installs them.
+- **The NVIDIA driver**, version 570.26 or newer, so that `nvidia-smi` works. Check with `nvidia-smi`.
+- **Free disk space**: about 3 GiB for a download and about 13 GiB for one build. A GiB is about a billion bytes.
+- **A free NVIDIA Developer Program account.** You log in with it to download.
+- **For the three Maxine SDKs only:** the NGC command line tool and a personal API key. NGC is NVIDIA's online catalogue (NVIDIA GPU Cloud) where it publishes the Maxine SDKs, and the API key is the password the tool uses. Step 3 explains how to get both. The Optical Flow SDK and TensorRT need no NGC: you download one file in a browser.
 
-The options of `scripts/setup.sh`:
+### Who does what
+
+| Step | You (the human) | An AI agent |
+|---|---|---|
+| Log in to NVIDIA, accept the licence, download a file in a browser | Yes | No |
+| Create the NGC API key and enter it with `ngc config set` | Yes | No. Never paste a key into a chat or give it to an agent |
+| Answer `y` to a `sudo` command | Yes | No |
+| Run `scripts/setup.sh --dry-run`, `scripts/check-ngc.sh` and the checks | Optional | Yes |
+| Run `scripts/setup.sh` for real | Optional | Yes, up to each question that needs you |
+
+The script reads a key only from the `NGC_API_KEY` environment variable or from a hidden prompt, and it never prints, logs or stores it.
+
+### Steps
+
+1. **Get this repository.**
+
+   ```bash
+   git clone https://github.com/rsd/omarchy-nvidia-sdks.git
+   cd omarchy-nvidia-sdks
+   ```
+
+2. **Look first.** A dry run checks your machine and prints every command it would run. It changes nothing and asks nothing.
+
+   ```bash
+   scripts/setup.sh --dry-run
+   ```
+
+   *Success:* the output ends with `Dry run: nothing was asked, run or written.` Lines that contain `WARNING` name something missing and how to fix it (for example a missing `base-devel`). Fix those, then run it again.
+
+3. **Download the SDK you want. This step is yours.** Pick the SDK or SDKs first:
+
+   | You want | `--sdk` key | How you get it |
+   |---|---|---|
+   | AI green screen, background blur, video noise removal | `vfx` | NGC |
+   | Eye contact, face detection | `ar` | NGC |
+   | Microphone noise and room echo removal, Studio Voice | `afx` | NGC |
+   | Optical Flow | `of` | Browser |
+   | TensorRT | `trt` | Browser |
+
+   - **Maxine SDKs (`vfx`, `ar`, `afx`):** set up NGC once.
+     1. Log in to your NVIDIA Developer Program account.
+     2. On the SDK's NGC catalogue page, select **Get Access** and accept NVIDIA's licence.
+     3. Create a personal API key that includes the **NGC Catalog** service.
+     4. Install the NGC command line tool, `ngc`.
+     5. Run `ngc config set` yourself and paste the key at its prompt.
+
+     [docs/download.md](docs/download.md#prerequisites) has the exact links and commands. The download itself (`download.sh`) runs later, inside step 4.
+   - **Optical Flow and TensorRT (`of`, `trt`):** open the download page in a browser, log in, accept the licence and save the file in `~/Downloads`. The file names are `optical_flow_sdk_5.0.7.zip` and `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst`. Take the Linux x86_64 build, not ARM. See [docs/optical-flow.md](docs/optical-flow.md#download) and [docs/tensorrt.md](docs/tensorrt.md#download).
+
+   *Success:* for NGC, `scripts/check-ngc.sh` (next step) accepts your key. For a browser download, the file is in `~/Downloads`.
+
+4. **Check your NGC key (Maxine SDKs only).** This is read-only. It never prints, logs or stores a key.
+
+   ```bash
+   scripts/check-ngc.sh
+   ```
+
+   *Success:* every line says `OK` and the exit status is 0. After each `FAIL` it prints a hint. One `FAIL` is harmless if you do not need that effect: HTTP 402 for the Early Access model `afx_speaker_focus` means your key works but your account lacks that approval. [Check your NGC credentials](#check-your-ngc-credentials) lists the results.
+
+5. **Run the guided setup.** Name the SDKs you chose. The script asks before every step that changes anything (the default answer is No) and prints each command it runs. It finds your download, offers to run `download.sh` for a Maxine SDK, builds the package with `makepkg`, installs it with `sudo pacman -U`, and checks the result.
+
+   ```bash
+   scripts/setup.sh --sdk vfx
+   ```
+
+   Replace `vfx` with `ar`, `afx`, `of`, `trt`, or a comma separated list such as `vfx,afx`. The build takes several minutes, and the installed package is several GiB.
+
+   *Success:* the `== 7. Check` section shows `ok` in every column for your SDK and the script exits with status 0. Section `== 8. Undo` then prints the commands that remove what it installed.
+
+6. **Use it.** A program loads the package's environment file and, for Maxine, preloads a small shim. [docs/usage.md](docs/usage.md) shows how, and `docs/usage.md#check-the-installation` has the checks by hand.
+
+To undo: run the `sudo pacman -R` command that section 8 printed. The script never runs it for you.
+
+### If something fails
+
+| What you see | What it means and what to do |
+|---|---|
+| `HTTP 402`, or an effect is skipped | Your key works, but your account has no access to that one model (for example the Early Access effect `speaker_focus`). The script skips it and goes on. Request access on the model's NGC page, or leave the effect out. `--features-afx all` already leaves it out. See [HTTP 402](docs/download.md#http-402-the-key-works-the-account-has-no-access) |
+| `403`, `could not be found`, or `check-ngc.sh` prints `FAIL` | Run `scripts/check-ngc.sh`. It tells a missing key, an expired key, missing Maxine access and a missing entitlement apart. Most often you skipped **Get Access** or ran `ngc config set` with the wrong organisation. See [Troubleshooting](docs/download.md#troubleshooting) |
+| `ngc` not found | The NGC tool is not installed, or `~/.local/bin` is not on your `PATH`. See [step 3 of the NGC setup](docs/download.md#3-install-the-ngc-cli) |
+| The script cannot find your download | It prints the manual steps and waits. Save or download the file, then press Enter to check again, or give its place with `--src-vfx PATH` (or `--src-ar`, `--src-afx`, `--src-of`, `--src-trt`) |
+| TensorRT: `this is the ARM (aarch64) build` or `is not the archive this recipe packages` | You have the wrong file: the ARM build, or a `cuda-12.9` build instead of `cuda-13.4`. Download `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst`. See [docs/tensorrt.md](docs/tensorrt.md#download) |
+| `WARNING` about disk space, `base-devel`, `fakeroot` or `bsdtar` | Free the space, or run the `sudo pacman -S --needed ...` command in the warning |
+| `WARNING` that the GPU or driver is too old | The SDKs need Turing (`sm_75`) or newer and driver 570.26 or newer. Update the driver, or this GPU cannot run them |
+| `pacman -U` stops on files that "exist in filesystem" | You copied Audio Effects effects in by hand earlier. The script prints the `sudo rm -r` command that clears them and asks first. See [setup.md](docs/setup.md#5-install) |
+
+### Options of `scripts/setup.sh`
 
 | Option | Effect |
 |---|---|
@@ -66,6 +141,8 @@ scripts/setup.sh --sdk afx --features-afx superres-16k_to_48k     # one named ef
 scripts/setup.sh --sdk vfx,afx --dry-run                          # look at two SDKs
 ```
 
+The script runs the whole procedure for any of the five SDKs: checks of your machine, detection of your download, the optional features of a Maxine SDK, `configure.sh` (which saves your choice of features and GPU), `makepkg`, the installation, a check of the result and the commands to undo it. Login, licence acceptance and `ngc config set` stay with you, and so does the browser download of the Optical Flow SDK and TensorRT. The steps, the options and what the script does with `sudo` are in [docs/setup.md](docs/setup.md).
+
 Some effects need an approval that NGC grants on request (Maxine Early Access). `setup.sh` marks them "access required" in its lists and prints the page where to ask. If your account has no access, NGC answers HTTP 402 and that effect is skipped; the rest of the run goes on. See [HTTP 402: the key works, the account has no access](docs/download.md#http-402-the-key-works-the-account-has-no-access).
 
 ### Check your NGC credentials
@@ -77,9 +154,11 @@ scripts/check-ngc.sh                 # the NGC CLI's key, Maxine access, the Ear
 scripts/check-ngc.sh --key --no-cli  # only a key you type at the prompt
 ```
 
-It prints one line per check (OK, FAIL or SKIP) and a hint after each FAIL, and exits 0 when every check passed, 1 when one failed and 2 for a usage error. Type a key at the prompt of `--key`, which does not echo it: a key given as `NGC_API_KEY=... scripts/check-ngc.sh` on the command line stays in your shell history. What is checked, what each result means and the options are in [docs/download.md](docs/download.md#check-your-ngc-credentials).
+It prints one line per check (OK, FAIL or SKIP) and a hint after each FAIL. It exits 0 when every check passed, 1 when one failed and 2 for a usage error. Type a key at the prompt of `--key`, which does not echo it. Do not put the key on the command line as `NGC_API_KEY=... scripts/check-ngc.sh`: it stays in your shell history. What is checked, what each result means and the options are in [docs/download.md](docs/download.md#check-your-ngc-credentials).
 
-**Manual.** The same procedure, one command per step:
+### Manual steps for one SDK
+
+The same procedure by hand, one command per step. This example is the Video Effects SDK.
 
 1. Download the SDK files from NGC with one command:
 
@@ -87,25 +166,49 @@ It prints one line per check (OK, FAIL or SKIP) and a hint after each FAIL, and 
    maxine-vfx/download.sh
    ```
 
-   The script detects your GPU architecture, probes NGC, prints a table of what it would download and how big it is, asks for confirmation, downloads only what is missing, verifies the result and retries failures. Use `--dry-run` to look without downloading, `--preset all` for every feature, and `--yes` to skip the question. The options are in [docs/download.md](docs/download.md#download-with-one-command). The result is one directory, by default `~/Downloads/maxine`.
+   The script detects your GPU architecture, asks NGC what exists, prints a table of what it would download and how big it is, and asks for confirmation. It downloads only what is missing, verifies the result and retries failures. Use `--dry-run` to look without downloading, `--preset all` for every feature, and `--yes` to skip the question. The options are in [docs/download.md](docs/download.md#download-with-one-command). The result is one directory, by default `~/Downloads/maxine`.
 
-2. Choose your features and architectures, and build the package. The script prints these commands with your paths filled in, and `--build` runs them for you:
+2. Choose your features and architectures, and build the package. The download script prints these commands with your paths filled in, and `--build` runs them for you:
 
    ```bash
    maxine-vfx/configure.sh --src ~/Downloads/maxine --archs sm_120 --features all --write
    cd maxine-vfx && makepkg -f
    ```
 
-   `configure.sh` saves the choice in `maxine-vfx/selection.conf` (see [Choose your features and GPU](#choose-your-features-and-gpu)), and `makepkg` reads it. Without `selection.conf` you can pass the same choice in the environment: `MAXINE_VFX_SRC=~/Downloads/maxine MAXINE_VFX_ARCHS=sm_120 MAXINE_VFX_FEATURES=all makepkg -f`.
+   `configure.sh` saves the choice in `maxine-vfx/selection.conf` (see [Choose your features and GPU](#choose-your-features-and-gpu)), and `makepkg` reads it. Replace `sm_120` with your GPU's architecture (the number from `nvidia-smi --query-gpu=compute_cap --format=csv,noheader`, without the dot, after `sm_`; see [docs/gpu-support.md](docs/gpu-support.md)). Without `selection.conf` you can pass the same choice in the environment: `MAXINE_VFX_SRC=~/Downloads/maxine MAXINE_VFX_ARCHS=sm_120 MAXINE_VFX_FEATURES=all makepkg -f`.
 
-3. Install the package yourself: `sudo pacman -U maxine-vfx-sdk-local-*.pkg.tar*`. Only `scripts/setup.sh` runs `sudo` or installs anything, and it shows each command and asks before running it; `download.sh`, `configure.sh` and the PKGBUILDs never do.
+3. Install the package yourself (run it in `maxine-vfx/`, where `makepkg` left it):
+
+   ```bash
+   sudo pacman -U maxine-vfx-sdk-local-*.pkg.tar*
+   ```
+
+   Only `scripts/setup.sh` runs `sudo` or installs anything, and it shows each command and asks before running it. `download.sh`, `configure.sh` and the PKGBUILDs never do.
 4. Use it from your programs, following [docs/usage.md](docs/usage.md).
 
 The build options (`MAXINE_VFX_SRC`, `MAXINE_VFX_ARCHS`, `MAXINE_VFX_FEATURES`) are described in [maxine-vfx/README.md](maxine-vfx/README.md). If you prefer to type the `ngc` commands yourself, [docs/download.md](docs/download.md#download-by-hand) lists them in full.
 
+## What is included
+
+| Directory | Package | Contents |
+|---|---|---|
+| [`maxine-vfx/`](maxine-vfx/) | `maxine-vfx-sdk-local` | NVIDIA Maxine Video Effects SDK 1.3.0.0: the features and GPU architectures you download and select. The download helper fetches AI green screen, background blur and video noise removal by default |
+| [`maxine-ar/`](maxine-ar/) | `maxine-ar-sdk-local` | NVIDIA Maxine AR SDK 1.2.0.0: eye contact (gaze redirection), face box detection, facial landmarks, face expressions and the other documented AR features. The download helper fetches eye contact with the two features it depends on by default |
+| [`maxine-afx/`](maxine-afx/) | `maxine-afx-sdk-local` | NVIDIA Maxine Audio Effects SDK 3.0.0 (package version 3.0.0.12): noise removal, room echo removal, both together and Studio Voice, at the sample rates you download. The download helper fetches those four at 48 kHz by default |
+| [`nvidia-optical-flow/`](nvidia-optical-flow/) | `nvidia-optical-flow-sdk-local` | NVIDIA Optical Flow SDK 5.0.7 from your own `optical_flow_sdk_5.0.7.zip`: the headers, the FRUC (frame rate up-conversion) library when your download has it, and the samples and NvOFTracker as source, under `/opt/nvidia/optical-flow`. The runtime library comes from the NVIDIA driver. Guide: [docs/optical-flow.md](docs/optical-flow.md) |
+| [`nvidia-tensorrt/`](nvidia-tensorrt/) | `nvidia-tensorrt-sdk-local` | NVIDIA TensorRT 11.4.0.106 for Linux x86_64 and CUDA 13.4 from your own archive (the ARM build is refused), installed as shipped under `/opt/nvidia/tensorrt`, with a pkg-config file and an environment file. It sits beside the AUR's `tensorrt`, which installs into `/usr`. Guide: [docs/tensorrt.md](docs/tensorrt.md) |
+
+The three Maxine packages follow the same pattern. You download the SDK from NGC, you choose the features and GPU architectures, and `makepkg` builds one package from your download. Each installs under its own `/opt/nvidia/maxine/` directory with its own environment file, and none sets anything globally, so you can install them together.
+
+The Optical Flow SDK and TensorRT packages are simpler. You download one file in a browser after accepting NVIDIA's licence, and there are no features or architectures to choose. They install under `/opt/nvidia/optical-flow` and `/opt/nvidia/tensorrt`, with their own environment files, and you can install them beside the others.
+
+`scripts/setup.sh` also lists a Maxine Early Access entry. It is a placeholder that only prints how to request access.
+
+The sections up to [Not limited to one GPU or to today's features](#not-limited-to-one-gpu-or-to-todays-features) describe the Video Effects package. [The AR and Audio Effects packages](#the-ar-and-audio-effects-packages) follow.
+
 ## Choose your features and GPU
 
-Run the selection helper on your download directory to see what you have and what the SDK offers:
+A GPU architecture is the generation of your GPU, written `sm_` plus its compute capability without the dot: `sm_120` for an RTX 50 series card. Run the selection helper on your download directory to see what you have and what the SDK offers:
 
 ```bash
 maxine-vfx/configure.sh --src ~/Downloads/maxine
@@ -138,7 +241,7 @@ To save a selection:
 maxine-vfx/configure.sh --src ~/Downloads/maxine --archs sm_120 --features all --write
 ```
 
-This validates the selection against what is present (a feature or architecture you have not downloaded is an error, and the message names the command that fetches it) and writes `maxine-vfx/selection.conf`. The file is git-ignored because it holds a local path. The PKGBUILD reads it when it builds; it is parsed as plain `KEY=value` lines and never executed. An environment variable overrides the file, and the file overrides the built-in default. `configure.sh --show` prints the current file.
+This checks the selection against what is present (a feature or architecture you have not downloaded is an error, and the message names the command that fetches it) and writes `maxine-vfx/selection.conf`. Git ignores the file because it holds a local path. The PKGBUILD reads it when it builds. It is parsed as plain `KEY=value` lines and never executed. An environment variable overrides the file, and the file overrides the built-in default. `configure.sh --show` prints the current file.
 
 To fetch more features or architectures, run `maxine-vfx/download.sh` again with `--features` or `--archs`, then `configure.sh` and `makepkg` again. Which GPUs are supported, how to find your architecture and how to fetch models for another GPU are in [docs/gpu-support.md](docs/gpu-support.md).
 
@@ -213,7 +316,8 @@ tools/maxine-probe/               a small program that checks the SDK loads
 scripts/test.sh
 ```
 
-This runs every check in the repository, for all five packages: shellcheck over every script, the syntax and metadata of each PKGBUILD, the fixture tests of each package's `assemble.sh`, `configure.sh` and `download.sh` (the last against a fake `ngc`), the `configure.sh` and `selection.conf` tests of the Optical Flow and TensorRT packages on tiny fake zips, archives and trees, a `makepkg` build of each PKGBUILD against fake SDK files, the shim test, the tests of `scripts/setup.sh` and `scripts/check-ngc.sh` (with stubbed `pacman`, `sudo`, `makepkg`, `ngc`, `curl` and `nvidia-smi`, so nothing is installed and nothing reaches NGC), and the licence guard and its hooks, then the guard over the whole tree. It needs `shellcheck`. A GPU is not required, it uses no network and it needs no NVIDIA download. The `makepkg` fixture builds, and the Optical Flow and TensorRT `configure.sh` tests where they need `bsdtar`, are skipped when `makepkg`, `fakeroot` or `bsdtar` is missing.
+This runs every check in the repository, for all five packages: shellcheck over every script, the syntax and metadata of each PKGBUILD, the fixture tests of each package's `assemble.sh`, `configure.sh` and `download.sh` (the last against a fake `ngc`), the `configure.sh` and `selection.conf` tests of the Optical Flow and TensorRT packages on tiny fake zips, archives and trees, a `makepkg` build of each PKGBUILD against fake SDK files, the shim test, the tests of `scripts/setup.sh` and `scripts/check-ngc.sh` (with stubbed `pacman`, `sudo`, `makepkg`, `ngc`, `curl` and `nvidia-smi`, so nothing is installed and nothing reaches NGC), and the licence guard and its hooks, then the guard over the whole tree. It needs `shellcheck` (a tool that checks shell scripts for mistakes). A GPU is not required, it uses no network and it needs no NVIDIA download. The `makepkg` fixture builds, and the Optical Flow and TensorRT `configure.sh` tests where they need `bsdtar`, are skipped when `makepkg`, `fakeroot` or `bsdtar` is missing.
+
 ## Licences and caveats
 
 ### Licence and personal use
