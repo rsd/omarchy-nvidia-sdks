@@ -376,18 +376,18 @@ With the environment file applied, the `ldd` command prints nothing. Use a featu
 
 ## Other packages: Optical Flow and TensorRT
 
-Two further packages are not Maxine SDKs and have their own pages: `nvidia-optical-flow-sdk-local` (the NVIDIA Optical Flow SDK, [optical-flow.md](optical-flow.md)) and `nvidia-tensorrt-sdk-local` (TensorRT, [tensorrt.md](tensorrt.md)). They follow the same rules as the three above: each installs under its own directory in `/opt/nvidia/`, has an environment file you load for one program or one build, and sets nothing globally. They need no shim.
+Two further packages are not Maxine SDKs and have their own pages: `nvidia-optical-flow-sdk-local` (the NVIDIA Optical Flow SDK, [optical-flow.md](optical-flow.md)) and `nvidia-tensorrt-sdk-local` (TensorRT, [tensorrt.md](tensorrt.md)). They follow the same rules as the three above: each installs under its own directory in `/opt/nvidia/`, has an environment file you load for one program or one build, and sets no environment variable globally (the TensorRT package does add a system library path entry, described below). They need no shim.
 
 | Package | Directory | Environment file | Library path key |
 |---|---|---|---|
 | `nvidia-optical-flow-sdk-local` | `/opt/nvidia/optical-flow` | `/usr/share/nvidia-optical-flow/nvidia-optical-flow.env` | `NVIDIA_OF_LIBRARY_PATH` (absent when FRUC is not packaged) |
 | `nvidia-tensorrt-sdk-local` | `/opt/nvidia/tensorrt` | `/usr/share/nvidia-tensorrt/nvidia-tensorrt.env` | `NVIDIA_TRT_LIBRARY_PATH` |
 
-A program that combines these with a Maxine SDK loads several environment files, and each sets `LD_LIBRARY_PATH`, so the last one wins. Build `LD_LIBRARY_PATH` yourself from the `*_LIBRARY_PATH` keys (`MAXINE_VFX_LIBRARY_PATH`, `MAXINE_AR_LIBRARY_PATH`, `MAXINE_AFX_LIBRARY_PATH`, `NVIDIA_OF_LIBRARY_PATH`, `NVIDIA_TRT_LIBRARY_PATH`), skipping the keys that a file does not set, and set it after loading the files. In a systemd unit, write the joined value in an `Environment=LD_LIBRARY_PATH=...` line after the `EnvironmentFile=` lines. For TensorRT, prefer an RPATH to a library path: the Maxine SDKs bundle TensorRT 10, and this package's TensorRT 11 must not be put in front of theirs.
+A program that combines these with a Maxine SDK loads several environment files, and each sets `LD_LIBRARY_PATH`, so the last one wins. Build `LD_LIBRARY_PATH` yourself from the `*_LIBRARY_PATH` keys (`MAXINE_VFX_LIBRARY_PATH`, `MAXINE_AR_LIBRARY_PATH`, `MAXINE_AFX_LIBRARY_PATH`, `NVIDIA_OF_LIBRARY_PATH`, `NVIDIA_TRT_LIBRARY_PATH`), skipping the keys that a file does not set, and set it after loading the files. In a systemd unit, write the joined value in an `Environment=LD_LIBRARY_PATH=...` line after the `EnvironmentFile=` lines. The TensorRT package is the exception to the rule that a program must opt in: it installs an `/etc/ld.so.conf.d` entry, so its TensorRT 11 is on the system loader path. It does not shadow the TensorRT 10 that the Maxine SDKs bundle: the sonames differ (`libnvinfer.so.11` against `libnvinfer.so.10`), and the `LD_LIBRARY_PATH` from a Maxine SDK's environment file is searched before the loader cache. A program that combines them therefore no longer needs `NVIDIA_TRT_LIBRARY_PATH` in its `LD_LIBRARY_PATH`.
 
 ## Why nothing is global
 
-None of the three packages installs an `/etc/ld.so.conf.d` entry or an `/etc/profile.d` file, or sets `LD_LIBRARY_PATH` or `LD_PRELOAD` globally, and none writes under `/etc`:
+None of the three Maxine packages installs an `/etc/ld.so.conf.d` entry or an `/etc/profile.d` file, or sets `LD_LIBRARY_PATH` or `LD_PRELOAD` globally, and none writes under `/etc`:
 
 - Each SDK bundles its own CUDA 12.8, cuDNN and TensorRT 10.9. On Arch, which ships CUDA 13, putting them on the global library path would shadow the system libraries for every program. The bundled directories are on the path only for the program that loads the environment file.
 - `LD_PRELOAD` is per process by design. The shim redirects one file, `/etc/os-release`, for the process that preloads it, so that only that process sees the replacement and the real file stays untouched.

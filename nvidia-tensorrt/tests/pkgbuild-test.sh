@@ -151,7 +151,7 @@ mkdir -p "$tmp/home"
 srcinfo_before=$(srcinfo)
 check "the metadata provides nvidia-tensorrt-sdk" grep -qxF $'\tprovides = nvidia-tensorrt-sdk=11.4.0.106' <<<"$srcinfo_before"
 check "the metadata provides tensorrt" grep -qxF $'\tprovides = tensorrt=11.4.0.106' <<<"$srcinfo_before"
-check "the metadata has pkgrel 2" grep -qxF $'\tpkgrel = 2' <<<"$srcinfo_before"
+check "the metadata has pkgrel 3" grep -qxF $'\tpkgrel = 3' <<<"$srcinfo_before"
 url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.4.0/tars/$name
 check "the metadata has the exact download URL, named as the archive" \
     grep -qxF $'\tsource = '"$name::$url" <<<"$srcinfo_before"
@@ -159,7 +159,7 @@ check "the metadata has the pinned checksum" grep -qxF $'\tsha256sums = '"$sum" 
 check "the metadata does not extract the download" grep -qxF $'\tnoextract = '"$name" <<<"$srcinfo_before"
 check "the metadata depends on cuda 13.4 or newer 13, and nvidia-utils" \
     test "$(grep -E $'^\tdepends = ' <<<"$srcinfo_before")" = $'\tdepends = cuda>=13.4\n\tdepends = cuda<14\n\tdepends = nvidia-utils'
-check "the metadata has no conflicts" not grep -q $'^\tconflicts' <<<"$srcinfo_before"
+check "the metadata conflicts with tensorrt" grep -qxF $'\tconflicts = tensorrt' <<<"$srcinfo_before"
 check "the metadata does not provide python-tensorrt" not grep -q 'python-tensorrt' <<<"$srcinfo_before"
 check "the environment's NVIDIA_TRT_SRC leaves no source in the metadata" \
     test -z "$(srcinfo NVIDIA_TRT_SRC="$dl" | grep -E $'^\t(source|sha256sums|noextract) =' || true)"
@@ -194,10 +194,16 @@ done
 check "the pkg-config file is packaged" has "$r/lib/pkgconfig/nvidia-tensorrt.pc"
 check "the environment file is packaged" has usr/share/nvidia-tensorrt/nvidia-tensorrt.env
 check "the README is packaged" has usr/share/doc/nvidia-tensorrt-sdk-local/README.md
-outside=$(grep -vE "^($r|usr/share)(/|$)" <<<"$listing" | grep -vxE 'opt|opt/nvidia|usr' || true)
-check "nothing outside /opt/nvidia/tensorrt and /usr/share" test -z "$outside"
-check "nothing under /usr/include, /usr/lib or /etc" test -z "$(grep -E '^(usr/include|usr/lib|etc)(/|$)' <<<"$listing" || true)"
+ldconf=etc/ld.so.conf.d/nvidia-tensorrt-sdk.conf
+outside=$(grep -vE "^($r|usr/share)(/|$)" <<<"$listing" | grep -vxE 'opt|opt/nvidia|usr|etc|etc/ld.so.conf.d' | grep -vxF "$ldconf" || true)
+check "nothing outside /opt/nvidia/tensorrt, /usr/share and the loader entry" test -z "$outside"
+check "nothing under /usr/include or /usr/lib" test -z "$(grep -E '^usr/(include|lib)(/|$)' <<<"$listing" || true)"
+check "nothing under /etc but the loader entry" test "$(grep -E '^etc(/|$)' <<<"$listing" | grep -vxE 'etc|etc/ld.so.conf.d')" = "$ldconf"
+check "the loader entry is packaged" has "$ldconf"
 verbose=$(bsdtar -tvf "$pkg")
+check "the loader entry is a 644 file" grep -qE "^-rw-r--r-- .* $ldconf\$" <<<"$verbose"
+check "the loader entry holds exactly the library directory" \
+    test "$(bsdtar -xOf "$pkg" "$ldconf" | grep -v '^#')" = "$R/lib"
 link_to() { grep -qF -- "$1 -> $2" <<<"$verbose"; } # link_to <path> <target>
 check "the library links are kept" link_to "$r/lib/libnvinfer.so" libnvinfer.so.11
 check "trtexec stays executable" grep -qE "^-rwxr-xr-x .* $r/bin/trtexec\$" <<<"$verbose"
@@ -477,12 +483,14 @@ check "targets/ is packaged as shipped" grep -qE " $r/targets/x86_64-linux-gnu/l
 check "lib/ stays a link to it" link_to "$r/lib" targets/x86_64-linux-gnu/lib
 check "the .pc file is in the linked directory" grep -qE " $r/targets/x86_64-linux-gnu/lib/pkgconfig/nvidia-tensorrt.pc$" <<<"$verbose"
 check "the library path is lib/" grep -qx "LD_LIBRARY_PATH=$R/lib" <<<"$(bsdtar -xOf "$pkg" usr/share/nvidia-tensorrt/nvidia-tensorrt.env)"
+check "the loader entry names lib/" test "$(bsdtar -xOf "$pkg" "$ldconf" | grep -v '^#')" = "$R/lib"
 rm "$tg/lib"
 build targetsonly NVIDIA_TRT_SRC="$tg"
 built "makepkg -f -d builds a tree with targets/x86_64-linux-gnu/lib and no lib/"
 envf=$(bsdtar -xOf "$pkg" usr/share/nvidia-tensorrt/nvidia-tensorrt.env)
 check "the library path is then targets/x86_64-linux-gnu/lib" \
     grep -qx "LD_LIBRARY_PATH=$R/targets/x86_64-linux-gnu/lib" <<<"$envf"
+check "the loader entry names it too" test "$(bsdtar -xOf "$pkg" "$ldconf" | grep -v '^#')" = "$R/targets/x86_64-linux-gnu/lib"
 check "and the pkg-config path below it" \
     grep -qx "NVIDIA_TRT_PKG_CONFIG_PATH=$R/targets/x86_64-linux-gnu/lib/pkgconfig" <<<"$envf"
 check "the .pc file's libdir is there" grep -qxF "libdir=\${prefix}/targets/x86_64-linux-gnu/lib" \
