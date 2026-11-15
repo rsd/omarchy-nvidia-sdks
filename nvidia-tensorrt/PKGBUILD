@@ -63,15 +63,18 @@
 # loads explicitly. One file under /etc, /etc/ld.so.conf.d/nvidia-tensorrt-sdk.conf,
 # puts the library directory on the system loader path (libnvinfer loads its
 # builder-resource and plugin libraries by bare name, which a RUNPATH does not
-# cover). Nothing under /usr/include or /usr/lib and no profile.d script:
-# trtexec is not on PATH and the Python wheels are shipped, not installed into
-# site-packages.
+# cover). Nothing under /usr/include; /usr/lib holds only symbolic links, one
+# per library whose ELF SONAME starts with do_not_link_against_ (the
+# builder-resource libraries, found at package time), each to the file in the
+# library directory: libnvinfer dlopens those by file name, which the loader
+# entry alone does not resolve. No profile.d script: trtexec is not on PATH
+# and the Python wheels are shipped, not installed into site-packages.
 #
 # shellcheck source-path=SCRIPTDIR
 
 pkgname=nvidia-tensorrt-sdk-local
 pkgver=11.4.0.106
-pkgrel=3
+pkgrel=4
 pkgdesc="NVIDIA TensorRT for CUDA 13.4, downloaded from NVIDIA at build time, packaged under /opt/nvidia/tensorrt (personal use, not redistributable)"
 arch=('x86_64')
 url='https://developer.nvidia.com/tensorrt/download'
@@ -91,7 +94,9 @@ depends=(
 # tensorrt=11.4.0.106 stays satisfied by provides, but must find TensorRT
 # through the loader, the environment file or pkg-config, not under /usr. We
 # install no Python module (the wheels are shipped, not installed), so
-# python-tensorrt is not provided.
+# python-tensorrt is not provided. The AUR's tensorrt owns real files in
+# /usr/lib with the names of our builder-resource links; conflicts handles
+# that too.
 conflicts=('tensorrt')
 provides=("nvidia-tensorrt-sdk=$pkgver" "tensorrt=$pkgver")
 # Keep NVIDIA's files byte-identical.
@@ -296,9 +301,11 @@ EOF
 
   # The system loader entry. libnvinfer dlopens its builder-resource and plugin
   # libraries by bare name, which the RUNPATH of the program that loads it does
-  # not cover, so without this entry such a program needs LD_LIBRARY_PATH. No
-  # install script: glibc's pacman hook (11-glibc-ldconfig.hook) runs ldconfig
-  # after any install, upgrade or removal of a path under etc/ld.so.conf.d/.
+  # not cover, so without this entry such a program needs LD_LIBRARY_PATH. It
+  # resolves the normal sonames; the builder-resource libraries need the links
+  # below. No install script: glibc's pacman hook (11-glibc-ldconfig.hook) runs
+  # ldconfig after any install, upgrade or removal of a path under
+  # etc/ld.so.conf.d/.
   local ldconf="$pkgdir/etc/ld.so.conf.d/nvidia-tensorrt-sdk.conf"
   install -d "${ldconf%/*}"
   cat >"$ldconf" <<EOF
@@ -310,6 +317,34 @@ EOF
     echo 'nvidia-tensorrt-sdk.conf: the generated file is not as expected' >&2
     return 1
   fi
+
+  # Links in /usr/lib for the libraries with a hidden soname. NVIDIA gives the
+  # builder-resource libraries (libnvinfer_builder_resource_sm120.so.11.4.0,
+  # the _win_ variants, ...) the SONAME do_not_link_against_..., so ldconfig
+  # caches them only under that name. libnvinfer has no RUNPATH and dlopens
+  # them by FILE name, which glibc finds only through LD_LIBRARY_PATH, the
+  # caller's RUNPATH or the default directories (/usr/lib): the loader entry
+  # does not help, and ONNX Runtime's TensorRT provider fails with "Unable to
+  # load library". So every regular file in the library directory whose SONAME
+  # starts with do_not_link_against_ (found here, not listed) gets a link
+  # /usr/lib/<file> -> <libdir>/<file>; the target does not exist at build
+  # time, like the licence links'. NVIDIA's files are not modified. A file that
+  # is not ELF is skipped.
+  local hlib hname hsoname hcount=0
+  while IFS= read -r -d '' hlib; do
+    hname=${hlib##*/}
+    hsoname=$(LC_ALL=C readelf -d -- "$hlib" 2>/dev/null | sed -n 's/.*Library soname: \[\(.*\)\].*/\1/p' | head -n 1) || true
+    [[ $hsoname == do_not_link_against_* ]] || continue
+    if [[ -e $pkgdir/usr/lib/$hname || -L $pkgdir/usr/lib/$hname ]]; then
+      echo "/usr/lib/$hname already exists in the package" >&2
+      return 1
+    fi
+    install -d "$pkgdir/usr/lib"
+    ln -s "$libdir/$hname" "$pkgdir/usr/lib/$hname"
+    echo "linked /usr/lib/$hname -> $libdir/$hname"
+    hcount=$((hcount + 1))
+  done < <(find "$pkgdir$libdir/" -maxdepth 1 -type f -print0 | sort -z)
+  echo "$hcount library link(s) with a hidden soname in /usr/lib"
 
   # The environment file: KEY=value lines, no quotes, no expansion, so it
   # works as a systemd EnvironmentFile= and with `set -a; . file; set +a`.

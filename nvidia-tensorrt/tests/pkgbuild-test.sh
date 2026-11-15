@@ -3,8 +3,10 @@
 # (tiny text files with TensorRT's names and a version header in its
 # format, packed here into a .tar.zst that carries the real archive's name)
 # and checks the package with bsdtar: the tree under /opt/nvidia/tensorrt,
-# the environment file, the pkg-config file, the licence links and that
-# nothing lies outside /opt/nvidia/tensorrt and /usr/share. Builds: the
+# the environment file, the pkg-config file, the licence links, the /usr/lib
+# links to the libraries with a hidden do_not_link_against_ soname (fake
+# ELF shared objects, built with cc) and that nothing else lies outside
+# /opt/nvidia/tensorrt and /usr/share. Builds: the
 # archive from the environment, a tree from selection.conf, and failures
 # for a checksum mismatch, another version and a hostile selection.conf
 # (never executed, not even by `makepkg --printsrcinfo`), for an
@@ -22,7 +24,7 @@
 # Everything happens under mktemp: the recipe files are copied there, the
 # fake archive's SHA-256 is pinned in the copied PKGBUILD, and makepkg's
 # BUILDDIR, PKGDEST, SRCDEST and LOGDEST point there, so this working tree
-# gets no src/, pkg/ or package. Needs makepkg, fakeroot and bsdtar; no
+# gets no src/, pkg/ or package. Needs makepkg, fakeroot, bsdtar and cc; no
 # GPU, no network, no NVIDIA download.
 # Usage: nvidia-tensorrt/tests/pkgbuild-test.sh. Exits non-zero on any
 # failure, 77 when a needed tool is missing.
@@ -31,7 +33,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 top=$(cd "$here/../.." && pwd)
 
-for tool in makepkg fakeroot bsdtar sha256sum; do
+for tool in makepkg fakeroot bsdtar sha256sum cc; do
     command -v "$tool" >/dev/null 2>&1 || { echo "skipped: $tool not found"; exit 77; }
 done
 
@@ -60,6 +62,16 @@ so_links() { # so_links <dir> <stem>
     ln -s "$2.so.11.4.0" "$1/$2.so.11"
     ln -s "$2.so.11" "$1/$2.so"
 }
+# Real tiny ELF shared objects, compiled once: <soname> is their SONAME.
+elfdir=$tmp/elf
+mkdir -p "$elfdir"
+mkelf() { # mkelf <soname>: $elfdir/<soname>.so
+    cc -shared -o "$elfdir/$1.so" -Wl,-soname,"$1" -x c /dev/null
+}
+mkelf do_not_link_against_nvinfer_builder_resource_sm120
+mkelf do_not_link_against_nvinfer_builder_resource_win_sm90
+mkelf libnvinfer.so.11
+hidden=(libnvinfer_builder_resource_sm120.so.11.4.0 libnvinfer_builder_resource_win_sm90.so.11.4.0)
 trt_tree() { # trt_tree <root> <major> <minor> <patch> <build>
     local root=$1 l
     mkdir -p "$root/include"
@@ -73,6 +85,10 @@ trt_tree() { # trt_tree <root> <major> <minor> <patch> <build>
         "$root/doc/Acknowledgements.txt" "$root/doc/TensorRT-SLA.pdf" "$root/lib/libnvinfer_static.a"
     for l in libnvinfer libnvinfer_plugin libnvonnxparser; do so_links "$root/lib" "$l"; done
     fake "$root/lib/libnvinfer_builder_resource.so.11.4.0"
+    # A real ELF with a normal soname (no link), and two with the hidden one.
+    cp "$elfdir/libnvinfer.so.11.so" "$root/lib/libnvinfer_plugin.so.11.4.0"
+    cp "$elfdir/do_not_link_against_nvinfer_builder_resource_sm120.so" "$root/lib/${hidden[0]}"
+    cp "$elfdir/do_not_link_against_nvinfer_builder_resource_win_sm90.so" "$root/lib/${hidden[1]}"
     chmod 755 "$root/bin/trtexec"
 }
 
@@ -151,7 +167,7 @@ mkdir -p "$tmp/home"
 srcinfo_before=$(srcinfo)
 check "the metadata provides nvidia-tensorrt-sdk" grep -qxF $'\tprovides = nvidia-tensorrt-sdk=11.4.0.106' <<<"$srcinfo_before"
 check "the metadata provides tensorrt" grep -qxF $'\tprovides = tensorrt=11.4.0.106' <<<"$srcinfo_before"
-check "the metadata has pkgrel 3" grep -qxF $'\tpkgrel = 3' <<<"$srcinfo_before"
+check "the metadata has pkgrel 4" grep -qxF $'\tpkgrel = 4' <<<"$srcinfo_before"
 url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.4.0/tars/$name
 check "the metadata has the exact download URL, named as the archive" \
     grep -qxF $'\tsource = '"$name::$url" <<<"$srcinfo_before"
@@ -195,9 +211,11 @@ check "the pkg-config file is packaged" has "$r/lib/pkgconfig/nvidia-tensorrt.pc
 check "the environment file is packaged" has usr/share/nvidia-tensorrt/nvidia-tensorrt.env
 check "the README is packaged" has usr/share/doc/nvidia-tensorrt-sdk-local/README.md
 ldconf=etc/ld.so.conf.d/nvidia-tensorrt-sdk.conf
-outside=$(grep -vE "^($r|usr/share)(/|$)" <<<"$listing" | grep -vxE 'opt|opt/nvidia|usr|etc|etc/ld.so.conf.d' | grep -vxF "$ldconf" || true)
-check "nothing outside /opt/nvidia/tensorrt, /usr/share and the loader entry" test -z "$outside"
-check "nothing under /usr/include or /usr/lib" test -z "$(grep -E '^usr/(include|lib)(/|$)' <<<"$listing" || true)"
+outside=$(grep -vE "^($r|usr/share)(/|$)" <<<"$listing" | grep -vxE 'opt|opt/nvidia|usr|usr/lib|etc|etc/ld.so.conf.d' | grep -vxF "$ldconf" | grep -vxE "usr/lib/(${hidden[0]}|${hidden[1]})" || true)
+check "nothing outside /opt/nvidia/tensorrt, /usr/share, the loader entry and the /usr/lib links" test -z "$outside"
+check "nothing under /usr/include" test -z "$(grep -E '^usr/include(/|$)' <<<"$listing" || true)"
+check "/usr/lib holds exactly the links for the hidden-soname libraries" \
+    test "$(grep -E '^usr/lib/' <<<"$listing" | sort)" = "$(printf 'usr/lib/%s\n' "${hidden[@]}" | sort)"
 check "nothing under /etc but the loader entry" test "$(grep -E '^etc(/|$)' <<<"$listing" | grep -vxE 'etc|etc/ld.so.conf.d')" = "$ldconf"
 check "the loader entry is packaged" has "$ldconf"
 verbose=$(bsdtar -tvf "$pkg")
@@ -205,6 +223,9 @@ check "the loader entry is a 644 file" grep -qE "^-rw-r--r-- .* $ldconf\$" <<<"$
 check "the loader entry holds exactly the library directory" \
     test "$(bsdtar -xOf "$pkg" "$ldconf" | grep -v '^#')" = "$R/lib"
 link_to() { grep -qF -- "$1 -> $2" <<<"$verbose"; } # link_to <path> <target>
+for f in "${hidden[@]}"; do
+    check "usr/lib/$f links to the library" link_to "usr/lib/$f" "$R/lib/$f"
+done
 check "the library links are kept" link_to "$r/lib/libnvinfer.so" libnvinfer.so.11
 check "trtexec stays executable" grep -qE "^-rwxr-xr-x .* $r/bin/trtexec\$" <<<"$verbose"
 check "the files are root-owned" not grep -qvE '^[^ ]+ +[0-9]+ root +root ' <<<"$(grep " $r/" <<<"$verbose")"
@@ -484,12 +505,19 @@ check "lib/ stays a link to it" link_to "$r/lib" targets/x86_64-linux-gnu/lib
 check "the .pc file is in the linked directory" grep -qE " $r/targets/x86_64-linux-gnu/lib/pkgconfig/nvidia-tensorrt.pc$" <<<"$verbose"
 check "the library path is lib/" grep -qx "LD_LIBRARY_PATH=$R/lib" <<<"$(bsdtar -xOf "$pkg" usr/share/nvidia-tensorrt/nvidia-tensorrt.env)"
 check "the loader entry names lib/" test "$(bsdtar -xOf "$pkg" "$ldconf" | grep -v '^#')" = "$R/lib"
+for f in "${hidden[@]}"; do
+    check "usr/lib/$f links to the library, through lib/" link_to "usr/lib/$f" "$R/lib/$f"
+done
 rm "$tg/lib"
 build targetsonly NVIDIA_TRT_SRC="$tg"
 built "makepkg -f -d builds a tree with targets/x86_64-linux-gnu/lib and no lib/"
 envf=$(bsdtar -xOf "$pkg" usr/share/nvidia-tensorrt/nvidia-tensorrt.env)
+verbose=$(bsdtar -tvf "$pkg")
 check "the library path is then targets/x86_64-linux-gnu/lib" \
     grep -qx "LD_LIBRARY_PATH=$R/targets/x86_64-linux-gnu/lib" <<<"$envf"
+for f in "${hidden[@]}"; do
+    check "usr/lib/$f links into targets/x86_64-linux-gnu/lib" link_to "usr/lib/$f" "$R/targets/x86_64-linux-gnu/lib/$f"
+done
 check "the loader entry names it too" test "$(bsdtar -xOf "$pkg" "$ldconf" | grep -v '^#')" = "$R/targets/x86_64-linux-gnu/lib"
 check "and the pkg-config path below it" \
     grep -qx "NVIDIA_TRT_PKG_CONFIG_PATH=$R/targets/x86_64-linux-gnu/lib/pkgconfig" <<<"$envf"
