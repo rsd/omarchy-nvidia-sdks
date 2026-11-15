@@ -1,14 +1,16 @@
 # nvidia-tensorrt: TensorRT as a local package
 
-[`PKGBUILD`](PKGBUILD) turns your own download of NVIDIA TensorRT 11.4 for CUDA 13.4 into a local Arch package, `nvidia-tensorrt-sdk-local`, installed under `/opt/nvidia/tensorrt`, that several projects on the machine can share: for example an ONNX Runtime build with the TensorRT execution provider. Download TensorRT yourself, after accepting NVIDIA's licence; this directory holds only the recipe. The built package contains NVIDIA software: keep it on your own machine and never share or upload it.
+[`PKGBUILD`](PKGBUILD) turns NVIDIA TensorRT 11.4 for CUDA 13.4 into a local Arch package, `nvidia-tensorrt-sdk-local`, installed under `/opt/nvidia/tensorrt`, that several projects on the machine can share: for example an ONNX Runtime build with the TensorRT execution provider. When you build, makepkg downloads TensorRT from NVIDIA under NVIDIA's licence, unless a copy is already on your machine (see [Downloading](#downloading)). This directory holds only the recipe. The built package contains NVIDIA software: keep it on your own machine and never share or upload it.
 
 The package version is TensorRT's full version, `11.4.0.106`, read from `include/NvInferVersion.h`. Arch's `cuda` package provides the CUDA 13 runtime it runs on.
 
 ## Downloading
 
-TensorRT is downloaded by hand; nothing in this repository downloads it.
+`makepkg` can download TensorRT itself. NVIDIA serves the exact archive that this recipe pins publicly, without a login, under its TensorRT Software License Agreement. It is a normal makepkg source entry: makepkg fetches it into the recipe directory (or into `SRCDEST`, if you set it), checks it against the pinned SHA-256 and keeps it, so a second build does not download it again. The file is about 3.7 GB (3,725,547,403 bytes). This repository does not contain the archive and does not redistribute it.
 
-1. Open <https://developer.nvidia.com/tensorrt/download> and sign in with an NVIDIA Developer Program account.
+To download it yourself instead, for example to build on a machine without internet access, or because you already have the file:
+
+1. Open <https://developer.nvidia.com/tensorrt/download> and sign in with an NVIDIA Developer Program account. The automatic download does not need this page.
 2. Read and accept the TensorRT Software License Agreement (<https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html>). It allows internal use and does not allow redistributing TensorRT, except its runtime libraries as part of an application.
 3. Choose TensorRT 11.4, Linux x86_64, the TAR package for CUDA 13.4. The file is
 
@@ -21,11 +23,20 @@ TensorRT is downloaded by hand; nothing in this repository downloads it.
    Not the ARM build, `TensorRT-Enterprise-...-Linux-aarch64-...` (or `-Linux-sbsa-...`): the recipe packages the x86_64 one and refuses the ARM archive or tree, by its file name or by its contents (an `aarch64` Python wheel or `targets/` directory, or, in a tree, an aarch64 `lib/libnvinfer.so`), and names the file to download instead. NVIDIA publishes some releases for ARM only (TensorRT 11.4.1.31, for one, has no x86_64 build); the refusal then says so and names the x86_64 version to download, `11.4.0.106`.
 
    The `PKGBUILD` pins that SHA-256 in `_trt_sha256`. The line may be left empty for a future release whose checksum nobody publishes: the archive must then carry the name `_trt_archive`, and `configure.sh` and the build print its SHA-256 for you to compare with your download (`not pinned: NVIDIA publishes no checksum for this release`) and check it against the one `configure.sh --write` recorded.
-4. Save it in `~/Downloads` (the default source) or anywhere else, and point the build at it (below). Keep only one `TensorRT-*.tar.*` archive in the directory you name (archives named for the ARM build are set aside when exactly one other is there).
+4. Save it in `~/Downloads` under its own name, or anywhere else, and point the build at it (below). In `~/Downloads` the build uses only the file of that exact name, so another TensorRT archive there does not get in the way. In a directory you name, keep only one `TensorRT-*.tar.*` archive (archives named for the ARM build are set aside when exactly one other is there).
 
 ## Build inputs
 
-One input, `NVIDIA_TRT_SRC`, from the environment, else from `selection.conf` in this directory (written by `configure.sh`), else the default `~/Downloads`. It is an absolute path to one of:
+One input, `NVIDIA_TRT_SRC`, is taken from the first of these that applies:
+
+1. the environment variable `NVIDIA_TRT_SRC`;
+2. `NVIDIA_TRT_SRC` in `selection.conf` in this directory (written by `configure.sh`);
+3. the file `~/Downloads/TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst`, if it exists (another TensorRT archive there is ignored);
+4. otherwise, the download (see [Downloading](#downloading)).
+
+The choice between a file and a download is fixed when makepkg reads the recipe, so that makepkg knows whether it has anything to download. If that choice would change while the build runs (for example, a file appears in `~/Downloads` in the meantime), the build stops and asks you to run makepkg again. Because the outcome depends on them, `makepkg --printsrcinfo` depends on the environment, `selection.conf` and `~/Downloads` too, so this repository publishes no `.SRCINFO`.
+
+When the source is set, it is an absolute path to one of:
 
 | Source | Example | Checked |
 |---|---|---|
@@ -63,10 +74,12 @@ features headers libs trtexec python samples
 
 ```sh
 cd nvidia-tensorrt
-./configure.sh --src ~/Downloads --write
-PKGEXT=.pkg.tar makepkg -f
-sudo pacman -U nvidia-tensorrt-sdk-local-11.4.0.106-1-x86_64.pkg.tar
+./configure.sh --src ~/Downloads --write   # optional: checks your file and saves it
+PKGEXT=.pkg.tar makepkg -f                 # downloads the archive when no source is found
+sudo pacman -U nvidia-tensorrt-sdk-local-11.4.0.106-2-x86_64.pkg.tar
 ```
+
+For a download, makepkg checks the file against the pinned SHA-256 before it is used. The same checks then apply as to a file you supplied. The download is about 3.7 GB, and the build also needs room for the archive's copy in `src/`, the extracted tree and the package. To keep the download in `~/Downloads`, run `SRCDEST=~/Downloads makepkg -f`: a copy already there is reused.
 
 `prepare()` prints the source and where it came from, copies the archive into makepkg's `src/` directory, and from then on reads only that copy: it verifies its SHA-256 again (against the pinned value, and against the one `configure.sh --write` recorded), checks its members and extracts it with `bsdtar` into `src/`, never next to your download. A download replaced while the build runs therefore cannot pass the checksum and be extracted in its place. An extracted tree is copied, and the copy is what is checked and packaged. The package is several GiB; `PKGEXT=.pkg.tar` skips a slow compression. Installing is your step: the recipe never runs `pacman` or `sudo`.
 
@@ -77,7 +90,7 @@ sudo pacman -U nvidia-tensorrt-sdk-local-11.4.0.106-1-x86_64.pkg.tar
 | `/opt/nvidia/tensorrt/` | the TensorRT tree as shipped: `include/`, `lib/`, `bin/` (`trtexec`), `python/` (the wheels), `samples/`, `data/`, `doc/`, and `targets/x86_64-linux-gnu/` when the archive has it |
 | `/opt/nvidia/tensorrt/lib/pkgconfig/nvidia-tensorrt.pc` | a pkg-config file, generated by the build (in `targets/x86_64-linux-gnu/lib/pkgconfig/` when the tree has no `lib/`) |
 | `/usr/share/nvidia-tensorrt/nvidia-tensorrt.env` | the environment file a consumer loads |
-| `/usr/share/licenses/nvidia-tensorrt-sdk-local/` | links to TensorRT's licence and notice files in `/opt/nvidia/tensorrt` |
+| `/usr/share/licenses/nvidia-tensorrt-sdk-local/` | `TERMS.txt`, a short note on the licence terms, and links to TensorRT's licence and notice files in `/opt/nvidia/tensorrt` |
 | `/usr/share/doc/nvidia-tensorrt-sdk-local/README.md` | this page |
 
 Nothing goes into `/usr/include`, `/usr/lib` or `/etc`: no `ld.so.conf.d` entry, no `profile.d` script, `trtexec` is not on `PATH` (run `/opt/nvidia/tensorrt/bin/trtexec`) and the Python wheels are not installed into `site-packages` (install one into a virtual environment yourself, with `pip install /opt/nvidia/tensorrt/python/tensorrt-<version>-cp<NN>-...whl`, picking the wheel of your Python version). The package depends on `cuda>=13.4` and `cuda<14` (the CUDA 13 runtime this TensorRT is built for, and the `cudart.pc` the pkg-config file requires) and `nvidia-utils` (the driver). It does not depend on cuDNN, which TensorRT no longer requires since version 10 (only optional, deprecated cuDNN-based plugins and tactic sources use it); install Arch's `cudnn` yourself if something you run needs it.
@@ -125,12 +138,14 @@ Link a program or library with an RPATH (or RUNPATH) of `/opt/nvidia/tensorrt/li
 
 ## Relation to the AUR's tensorrt package
 
-The Arch User Repository's `tensorrt` package installs the same NVIDIA archive into `/usr` (`/usr/include`, `/usr/lib`). This package installs it into `/opt/nvidia/tensorrt` and does not `provides` or `conflicts` with `tensorrt`: the two share no file and can be installed together, and a package that depends on `tensorrt` expects the `/usr` paths, which this package does not provide. A program built against one finds only that one. This package's checksum is the one that recipe publishes for the same archive.
+The Arch User Repository's `tensorrt` package installs the same NVIDIA archive into `/usr` (`/usr/include`, `/usr/lib`). This package installs it into `/opt/nvidia/tensorrt` and has no conflicts with it: the two share no file, this package adds no `ld.so.conf.d` entry, and both can be installed together.
+
+This package provides `nvidia-tensorrt-sdk` and `tensorrt` (version 11.4.0.106). So a package that depends on `tensorrt` can be satisfied by this one. Such a package expects the `/usr` paths, which this package does not provide, so it must find TensorRT through the environment file or pkg-config instead. A program built against one finds only that one. This package does not provide `python-tensorrt`, because it installs no Python module: it ships the wheels but does not install them. This package's checksum is the one that recipe publishes for the same archive.
 
 ## Licence notes
 
-- You accept NVIDIA's TensorRT Software License Agreement and download TensorRT yourself, with your own account. This repository holds only the recipe; no NVIDIA file is committed (the guard `scripts/check-no-nvidia.sh` enforces it).
-- The built package contains NVIDIA software and is for your own machine only. Never upload it to a package repository, to the AUR as a binary or to a release page, and never share it. The agreement permits distributing only TensorRT's runtime libraries as part of your own application, under its terms; this package is not that.
+- NVIDIA serves the TensorRT archive to you under its TensorRT Software License Agreement, whether makepkg downloads it or you do (see [Downloading](#downloading)). Read the agreement. This repository holds only the recipe; no NVIDIA file is committed (the guard `scripts/check-no-nvidia.sh` enforces it).
+- The built package contains NVIDIA software and is for your own machine only. Never upload it to a package repository, to the AUR as a binary or to a release page, and never share it. The agreement permits distributing only TensorRT's runtime libraries (the `.so` files), and only inside an application that adds material functionality (supplement sections 2 and 1.2); this package is not that. The package ships `/usr/share/licenses/nvidia-tensorrt-sdk-local/TERMS.txt` with this summary.
 - NVIDIA does not support this packaging. This is not legal advice: read the agreement you accept.
 
 ## Testing
@@ -141,3 +156,5 @@ tests/pkgbuild-test.sh    # a makepkg build of a fake archive in a temporary cop
 ```
 
 Both work on fake files under `mktemp`; neither needs a GPU, the network or a TensorRT download, and neither writes into this directory. The checksum tests pin the fake archive's SHA-256 in a temporary copy of the PKGBUILD, the file `configure.sh` reads `_trt_archive` and `_trt_sha256` from, and run the copy unpinned too. The ARM tests use fake aarch64 archives and trees: an `aarch64` wheel name, an `aarch64` or `sbsa` `targets/` directory, and a 20-byte ELF header for aarch64 in place of `libnvinfer`.
+
+The download tests in `pkgbuild-test.sh` replace makepkg's downloader with a stub that records the URL it is asked for and copies a local file, or fails. They check the exact URL, the reuse of a copy in `SRCDEST`, that a wrong file is refused by the checksum, and that `~/Downloads` and `NVIDIA_TRT_SRC` take precedence without any download. No test reaches the network.

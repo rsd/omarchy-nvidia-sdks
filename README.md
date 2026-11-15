@@ -1,6 +1,6 @@
 # omarchy-nvidia-sdks
 
-Local Arch Linux packages and a guided setup for the NVIDIA SDKs (software development kits: the libraries, headers and AI models a program uses) behind NVIDIA Broadcast-style RTX effects. You download each SDK yourself, and this repository builds it into a package for your own machine.
+Local Arch Linux packages and a guided setup for the NVIDIA SDKs (software development kits: the libraries, headers and AI models a program uses) behind NVIDIA Broadcast-style RTX effects. You download each SDK yourself, or let `makepkg` fetch TensorRT, and this repository builds it into a package for your own machine.
 
 ## What this is for
 
@@ -18,7 +18,7 @@ It was made for [omarchy-broadcast](https://github.com/rsd/omarchy-broadcast), a
 
 **Independent and reusable.** Any project on Arch Linux or an Arch-based distribution that needs the Maxine, Optical Flow or TensorRT headers and libraries can depend on these packages instead of carrying its own copy of an SDK. The packages are `maxine-vfx-sdk-local`, `maxine-ar-sdk-local`, `maxine-afx-sdk-local`, `nvidia-optical-flow-sdk-local` and `nvidia-tensorrt-sdk-local`. Each installs under `/opt/nvidia/` (for example `/opt/nvidia/maxine/videofx` and `/opt/nvidia/tensorrt`) with an environment file that a program loads. None sets anything globally, so you can install them together. [docs/usage.md](docs/usage.md) explains how a program finds the headers, libraries and models.
 
-**What it is not.** It is not an NVIDIA product, and NVIDIA does not support it. It does not redistribute anything from NVIDIA. You download each SDK from NVIDIA with your own account, under NVIDIA's licence. This repository holds only the build recipes (PKGBUILDs, scripts, documentation and the source of a small compatibility shim). The effects need an NVIDIA RTX GPU (Tensor cores, Turing or newer: see [docs/gpu-support.md](docs/gpu-support.md)). The licence terms, and what you may and may not do with a built package, are in [Licences and caveats](#licences-and-caveats) at the end of this page. Read them before you use anything here.
+**What it is not.** It is not an NVIDIA product, and NVIDIA does not support it. It does not redistribute anything from NVIDIA. You get each SDK from NVIDIA under NVIDIA's licence, with your own account where NVIDIA asks for one. TensorRT needs no account: `makepkg` can download it from NVIDIA's public server. This repository holds only the build recipes (PKGBUILDs, scripts, documentation and the source of a small compatibility shim). The effects need an NVIDIA RTX GPU (Tensor cores, Turing or newer: see [docs/gpu-support.md](docs/gpu-support.md)). The licence terms, and what you may and may not do with a built package, are in [Licences and caveats](#licences-and-caveats) at the end of this page. Read them before you use anything here.
 
 ## Quick start
 
@@ -32,8 +32,8 @@ You need all of these:
 - **Arch Linux or an Arch-based distribution** (for example Omarchy). It must have `pacman` (the package manager), `makepkg` (the tool that builds a package from a `PKGBUILD` recipe) and `fakeroot` and `bsdtar` (helper tools `makepkg` uses). `sudo pacman -S --needed base-devel fakeroot libarchive` installs them.
 - **The NVIDIA driver**, version 570.26 or newer, so that `nvidia-smi` works. Check with `nvidia-smi`.
 - **Free disk space**: about 3 GiB for a download and about 13 GiB for one build. A GiB is about a billion bytes.
-- **A free NVIDIA Developer Program account.** You log in with it to download.
-- **For the three Maxine SDKs only:** the NGC command line tool and a personal API key. NGC is NVIDIA's online catalogue (NVIDIA GPU Cloud) where it publishes the Maxine SDKs, and the API key is the password the tool uses. Step 3 explains how to get both. The Optical Flow SDK and TensorRT need no NGC: you download one file in a browser.
+- **A free NVIDIA Developer Program account.** You log in with it to download the Maxine and Optical Flow SDKs. TensorRT needs no login.
+- **For the three Maxine SDKs only:** the NGC command line tool and a personal API key. NGC is NVIDIA's online catalogue (NVIDIA GPU Cloud) where it publishes the Maxine SDKs, and the API key is the password the tool uses. Step 3 explains how to get both. The Optical Flow SDK and TensorRT need no NGC. The Optical Flow SDK is one file that you download in a browser. TensorRT is one file that `scripts/setup.sh` or `makepkg` downloads for you from NVIDIA, or that you download in a browser.
 
 ### Who does what
 
@@ -72,7 +72,7 @@ The script reads a key only from the `NGC_API_KEY` environment variable or from 
    | Eye contact, face detection | `ar` | NGC |
    | Microphone noise and room echo removal, Studio Voice | `afx` | NGC |
    | Optical Flow | `of` | Browser |
-   | TensorRT | `trt` | Browser |
+   | TensorRT | `trt` | Automatic (or a browser download you save in `~/Downloads`) |
 
    - **Maxine SDKs (`vfx`, `ar`, `afx`):** set up NGC once.
      1. Log in to your NVIDIA Developer Program account.
@@ -82,7 +82,8 @@ The script reads a key only from the `NGC_API_KEY` environment variable or from 
      5. Run `ngc config set` yourself and paste the key at its prompt.
 
      [docs/download.md](docs/download.md#prerequisites) has the exact links and commands. The download itself (`download.sh`) runs later, inside step 4.
-   - **Optical Flow and TensorRT (`of`, `trt`):** open the download page in a browser, log in, accept the licence and save the file in `~/Downloads`. The file names are `optical_flow_sdk_5.0.7.zip` and `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst`. Take the Linux x86_64 build, not ARM. See [docs/optical-flow.md](docs/optical-flow.md#download) and [docs/tensorrt.md](docs/tensorrt.md#download).
+   - **Optical Flow (`of`):** open the download page in a browser, log in, accept the licence and save `optical_flow_sdk_5.0.7.zip` in `~/Downloads`. See [docs/optical-flow.md](docs/optical-flow.md#download).
+   - **TensorRT (`trt`):** nothing to do if you have no copy. When `scripts/setup.sh` finds none in `~/Downloads`, `makepkg` downloads it from NVIDIA with no login, during the build. Read NVIDIA's TensorRT licence first: the script names it, and by building you accept it. To use your own copy instead, download `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst` in a browser and save it in `~/Downloads`. Take the Linux x86_64 build, not ARM. See [docs/tensorrt.md](docs/tensorrt.md#download).
 
    *Success:* for NGC, `scripts/check-ngc.sh` (next step) accepts your key. For a browser download, the file is in `~/Downloads`.
 
@@ -115,7 +116,7 @@ To undo: run the `sudo pacman -R` command that section 8 printed. The script nev
 | `HTTP 402`, or an effect is skipped | Your key works, but your account has no access to that one model (for example the Early Access effect `speaker_focus`). The script skips it and goes on. Request access on the model's NGC page, or leave the effect out. `--features-afx all` already leaves it out. See [HTTP 402](docs/download.md#http-402-the-key-works-the-account-has-no-access) |
 | `403`, `could not be found`, or `check-ngc.sh` prints `FAIL` | Run `scripts/check-ngc.sh`. It tells a missing key, an expired key, missing Maxine access and a missing entitlement apart. Most often you skipped **Get Access** or ran `ngc config set` with the wrong organisation. See [Troubleshooting](docs/download.md#troubleshooting) |
 | `ngc` not found | The NGC tool is not installed, or `~/.local/bin` is not on your `PATH`. See [step 3 of the NGC setup](docs/download.md#3-install-the-ngc-cli) |
-| The script cannot find your download | It prints the manual steps and waits. Save or download the file, then press Enter to check again, or give its place with `--src-vfx PATH` (or `--src-ar`, `--src-afx`, `--src-of`, `--src-trt`) |
+| The script cannot find your download | It prints the manual steps and waits. Save or download the file, then press Enter to check again, or give its place with `--src-vfx PATH` (or `--src-ar`, `--src-afx`, `--src-of`, `--src-trt`). For TensorRT it does not wait: `makepkg` downloads the file instead |
 | TensorRT: `this is the ARM (aarch64) build` or `is not the archive this recipe packages` | You have the wrong file: the ARM build, or a `cuda-12.9` build instead of `cuda-13.4`. Download `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst`. See [docs/tensorrt.md](docs/tensorrt.md#download) |
 | `WARNING` about disk space, `base-devel`, `fakeroot` or `bsdtar` | Free the space, or run the `sudo pacman -S --needed ...` command in the warning |
 | `WARNING` that the GPU or driver is too old | The SDKs need Turing (`sm_75`) or newer and driver 570.26 or newer. Update the driver, or this GPU cannot run them |
@@ -141,7 +142,7 @@ scripts/setup.sh --sdk afx --features-afx superres-16k_to_48k     # one named ef
 scripts/setup.sh --sdk vfx,afx --dry-run                          # look at two SDKs
 ```
 
-The script runs the whole procedure for any of the five SDKs: checks of your machine, detection of your download, the optional features of a Maxine SDK, `configure.sh` (which saves your choice of features and GPU), `makepkg`, the installation, a check of the result and the commands to undo it. Login, licence acceptance and `ngc config set` stay with you, and so does the browser download of the Optical Flow SDK and TensorRT. The steps, the options and what the script does with `sudo` are in [docs/setup.md](docs/setup.md).
+The script runs the whole procedure for any of the five SDKs: checks of your machine, detection of your download, the optional features of a Maxine SDK, `configure.sh` (which saves your choice of features and GPU), `makepkg`, the installation, a check of the result and the commands to undo it. Login, licence acceptance and `ngc config set` stay with you, and so does the browser download of the Optical Flow SDK. For TensorRT, the script uses the file in `~/Downloads` when there is one, and otherwise `makepkg` downloads it from NVIDIA during the build (see [docs/tensorrt.md](docs/tensorrt.md#download)). The steps, the options and what the script does with `sudo` are in [docs/setup.md](docs/setup.md).
 
 Some effects need an approval that NGC grants on request (Maxine Early Access). `setup.sh` marks them "access required" in its lists and prints the page where to ask. If your account has no access, NGC answers HTTP 402 and that effect is skipped; the rest of the run goes on. See [HTTP 402: the key works, the account has no access](docs/download.md#http-402-the-key-works-the-account-has-no-access).
 
@@ -196,11 +197,11 @@ The build options (`MAXINE_VFX_SRC`, `MAXINE_VFX_ARCHS`, `MAXINE_VFX_FEATURES`) 
 | [`maxine-ar/`](maxine-ar/) | `maxine-ar-sdk-local` | NVIDIA Maxine AR SDK 1.2.0.0: eye contact (gaze redirection), face box detection, facial landmarks, face expressions and the other documented AR features. The download helper fetches eye contact with the two features it depends on by default |
 | [`maxine-afx/`](maxine-afx/) | `maxine-afx-sdk-local` | NVIDIA Maxine Audio Effects SDK 3.0.0 (package version 3.0.0.12): noise removal, room echo removal, both together and Studio Voice, at the sample rates you download. The download helper fetches those four at 48 kHz by default |
 | [`nvidia-optical-flow/`](nvidia-optical-flow/) | `nvidia-optical-flow-sdk-local` | NVIDIA Optical Flow SDK 5.0.7 from your own `optical_flow_sdk_5.0.7.zip`: the headers, the FRUC (frame rate up-conversion) library when your download has it, and the samples and NvOFTracker as source, under `/opt/nvidia/optical-flow`. The runtime library comes from the NVIDIA driver. Guide: [docs/optical-flow.md](docs/optical-flow.md) |
-| [`nvidia-tensorrt/`](nvidia-tensorrt/) | `nvidia-tensorrt-sdk-local` | NVIDIA TensorRT 11.4.0.106 for Linux x86_64 and CUDA 13.4 from your own archive (the ARM build is refused), installed as shipped under `/opt/nvidia/tensorrt`, with a pkg-config file and an environment file. It sits beside the AUR's `tensorrt`, which installs into `/usr`. Guide: [docs/tensorrt.md](docs/tensorrt.md) |
+| [`nvidia-tensorrt/`](nvidia-tensorrt/) | `nvidia-tensorrt-sdk-local` | NVIDIA TensorRT 11.4.0.106 for Linux x86_64 and CUDA 13.4, from the archive that `makepkg` downloads from NVIDIA or that you supply (the ARM build is refused), installed as shipped under `/opt/nvidia/tensorrt`, with a pkg-config file and an environment file. It sits beside the AUR's `tensorrt`, which installs into `/usr`, and it provides `tensorrt` too: a package that depends on `tensorrt` finds TensorRT through the environment file or pkg-config, not under `/usr`. Guide: [docs/tensorrt.md](docs/tensorrt.md) |
 
 The three Maxine packages follow the same pattern. You download the SDK from NGC, you choose the features and GPU architectures, and `makepkg` builds one package from your download. Each installs under its own `/opt/nvidia/maxine/` directory with its own environment file, and none sets anything globally, so you can install them together.
 
-The Optical Flow SDK and TensorRT packages are simpler. You download one file in a browser after accepting NVIDIA's licence, and there are no features or architectures to choose. They install under `/opt/nvidia/optical-flow` and `/opt/nvidia/tensorrt`, with their own environment files, and you can install them beside the others.
+The Optical Flow SDK and TensorRT packages are simpler. Each is one file, obtained after you accept NVIDIA's licence, and there are no features or architectures to choose. You download the Optical Flow file in a browser. For TensorRT, `makepkg` can download the file from NVIDIA, or you can download it in a browser. They install under `/opt/nvidia/optical-flow` and `/opt/nvidia/tensorrt`, with their own environment files, and you can install them beside the others.
 
 `scripts/setup.sh` also lists a Maxine Early Access entry. It is a placeholder that only prints how to request access.
 
@@ -290,9 +291,9 @@ scripts/setup.d/                  one descriptor per SDK for setup.sh (format in
 scripts/test.sh                   runs every check of this repository
 scripts/tests/                    tests of the guard, of env.sh, of setup.sh, of check-ngc.sh and of a PKGBUILD fixture build
 docs/setup.md                     the guided setup: steps, options, key handling, the sudo commands, undo
-docs/download.md                  downloading the SDKs from NGC: the one-command path, the manual steps, sizes, the credential check, access (HTTP 402), troubleshooting, for the three Maxine SDKs
+docs/download.md                  what is downloaded, from where and whether it needs a login, for every SDK; and downloading the Maxine SDKs from NGC: the one-command path, the manual steps, sizes, the credential check, access (HTTP 402), troubleshooting, for the three Maxine SDKs
 docs/optical-flow.md              the Optical Flow SDK package: browser download, what it installs, environment file, use, check, troubleshooting
-docs/tensorrt.md                  the TensorRT package: browser download, what it installs, environment file, pkg-config, CMake and RPATH, the AUR's tensorrt, CUDA versions
+docs/tensorrt.md                  the TensorRT package: the download (automatic or in a browser), what it installs, environment file, pkg-config, CMake and RPATH, the AUR's tensorrt, CUDA versions
 docs/usage.md                     how a program uses each installed package: environment file, shim, models
 docs/gpu-support.md               supported GPUs, architectures and how to fetch their models
 maxine-vfx/PKGBUILD               the package recipe
@@ -305,7 +306,7 @@ maxine-vfx/tests/                 tests of assemble.sh, configure.sh and downloa
 maxine-ar/                        the AR SDK package: PKGBUILD, assemble.sh, download.sh, configure.sh, selection.sh, README.md, tests/ (same roles as in maxine-vfx/)
 maxine-afx/                       the Audio Effects SDK package: the same files as maxine-ar/
 nvidia-optical-flow/              the Optical Flow SDK package: PKGBUILD, assemble.sh, configure.sh, selection.sh, README.md, tests/ (no download.sh: the zip is downloaded in a browser)
-nvidia-tensorrt/                  the TensorRT package: PKGBUILD, source.sh, configure.sh, selection.sh, README.md, tests/ (no download.sh: the archive is downloaded in a browser)
+nvidia-tensorrt/                  the TensorRT package: PKGBUILD, source.sh, configure.sh, selection.sh, README.md, tests/ (no download.sh: makepkg downloads the archive, or you supply it)
 tools/os-release-shim/            the compatibility shim and its test
 tools/maxine-probe/               a small program that checks the SDK loads
 ```
@@ -324,7 +325,7 @@ This runs every check in the repository, for all five packages: shellcheck over 
 
 Read this before using anything here.
 
-- **You accept NVIDIA's licence and you download the SDK yourself**, with your own account: from NVIDIA NGC for the Maxine SDKs, and in a browser from NVIDIA's developer site for the Optical Flow SDK and TensorRT. The recipes only automate what happens after that.
+- **You accept NVIDIA's licence, and you download the SDK yourself**, with your own account where NVIDIA asks for one: from NVIDIA NGC for the Maxine SDKs, and in a browser from NVIDIA's developer site for the Optical Flow SDK. TensorRT is also served by NVIDIA without a login, and `makepkg` can download it for you under NVIDIA's TensorRT Software License Agreement, or you can download it in a browser. Apart from that download, the recipes only automate what happens after your download.
 - **This repository holds only recipes**: PKGBUILDs, scripts, documentation and the source of a small compatibility shim. **Nothing from NVIDIA is committed**: no SDK files, libraries, headers, models (`*.trtpkg`), tarballs or licence PDFs. The guard `scripts/check-no-nvidia.sh` enforces this: it refuses NVIDIA's file types (libraries, models and their `*.trtpkg.*` checksum sidecars, archives, PDFs, SDK headers, including those of the Optical Flow SDK and TensorRT), an unpacked SDK tree (`VideoFX/`, `ARSDK/`, `Audio_Effects_SDK/`, `Optical_Flow_SDK_*/`, `TensorRT-*/`), an NGC download directory, an SDK's top-level names (`lib/`, `include/`, `features/`, `external/`, `share/`, `samples/`, `licenses/`, `nvafx/`, `bin/`, `docs/`, `version.h`, `Changelog.txt`) placed directly inside a recipe directory (and the matching top-level names of the Optical Flow SDK and of the TensorRT archive inside their recipe directories), and file content that carries an NVIDIA marker. Enable its hooks in your clone with:
 
   ```bash
@@ -333,7 +334,7 @@ Read this before using anything here.
 
   The hooks are `pre-commit`, `pre-merge-commit` and `pre-push`. `pre-push` checks the commits being pushed with the guard's `--range` mode. `git commit --no-verify` bypasses them (as does `git push --no-verify` for `pre-push`), so the guard is a safety net and not an access control. `scripts/check-no-nvidia.sh --all` checks the working tree, not the history: a file committed earlier stays in the history until you rewrite it.
 
-- **The built package contains NVIDIA software and is for your own machine only.** Never upload it to a package repository, to the AUR as a binary, to a release page, or share it in any other way. The NVIDIA Software License Agreement for the Maxine SDKs (8.5) forbids redistribution, including in "publicly accessible software repositories". The Optical Flow SDK is under the NVIDIA DesignWorks SDK License, which does not allow redistributing the SDK stand-alone, and TensorRT is under the TensorRT Software License Agreement, which allows installing and using it internally and does not allow redistributing it, except its runtime libraries as part of an application. Neither package is that: read the licence you accept for each SDK.
+- **The built package contains NVIDIA software and is for your own machine only.** Never upload it to a package repository, to the AUR as a binary, to a release page, or share it in any other way. The NVIDIA Software License Agreement for the Maxine SDKs (8.5) forbids redistribution, including in "publicly accessible software repositories". The Optical Flow SDK is under the NVIDIA DesignWorks SDK License, which does not allow redistributing the SDK stand-alone, and TensorRT is under the TensorRT Software License Agreement, which allows installing and using it internally and does not allow redistributing it, except its runtime libraries inside an application that adds material functionality. The TensorRT package is not that, and it ships a short note on these terms in `/usr/share/licenses/nvidia-tensorrt-sdk-local/TERMS.txt`. Nothing built here is that: read the licence you accept for each SDK.
 - **Do not publish benchmark results** (the Maxine licence, 8.9), and do not reverse engineer the software.
 - **NVIDIA does not support this configuration.** Arch Linux and other distributions the SDK does not list, packages built by a third-party recipe, and client-side use of an SDK documented for servers, are outside what NVIDIA supports. Expect no vendor support.
 - This is not legal advice. Read the licence you accept.

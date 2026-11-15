@@ -7,12 +7,18 @@
 # nothing lies outside /opt/nvidia/tensorrt and /usr/share. Builds: the
 # archive from the environment, a tree from selection.conf, and failures
 # for a checksum mismatch, another version and a hostile selection.conf
-# (never executed, and without effect on `makepkg --printsrcinfo`), for an
+# (never executed, not even by `makepkg --printsrcinfo`), for an
 # archive or tree with a symbolic link out of it or a special file, and for
 # a tree changed after configure.sh --write; the archive unpinned (no
 # published checksum: built, with its SHA-256 printed; a SHA-256 recorded by
 # configure.sh still checked); the ARM (aarch64) build refused, by name and
 # by contents; and the targets/x86_64-linux-gnu layout.
+# The download mode (no NVIDIA_TRT_SRC, no selection.conf source, no archive
+# in ~/Downloads) runs against a stub DLAGENT that records the URL and copies
+# the fake archive: SRCDEST reuse, the exact URL, a wrong file refused by
+# makepkg's checksum, and ~/Downloads taking precedence without a download.
+# Every makepkg run here has that stub (failing unless a file is delivered),
+# so nothing can reach the network.
 # Everything happens under mktemp: the recipe files are copied there, the
 # fake archive's SHA-256 is pinned in the copied PKGBUILD, and makepkg's
 # BUILDDIR, PKGDEST, SRCDEST and LOGDEST point there, so this working tree
@@ -93,7 +99,27 @@ pin "$dl/$name"
 # build <name> [VAR=value...]: makepkg -f in the copied recipe directory,
 # with a fake HOME and only the given NVIDIA_TRT_SRC; the log in $log, the
 # status in $status, the package (when there is exactly one) in $pkg.
-log='' status=0 pkg=''
+log='' status=0 pkg='' mkflags=() # mkflags: extra makepkg options
+# A stub download agent: records the URL it is asked for in $stubdir/calls and
+# copies the file named in $stubdir/deliver to the output, or fails when there
+# is none. makepkg's --config sources the system one, then replaces DLAGENTS.
+stubdir=$tmp/stub
+mkdir -p "$stubdir"
+cat >"$stubdir/dlstub" <<'STUB'
+#!/usr/bin/env bash
+d=$(dirname "$0")
+printf '%s\n' "$1" >>"$d/calls"
+[[ -f $d/deliver ]] || exit 1
+cp -- "$(cat "$d/deliver")" "$2"
+STUB
+chmod 755 "$stubdir/dlstub"
+printf '#!/bin/sh\nexit 1\n' >"$stubdir/dlfail"
+chmod 755 "$stubdir/dlfail"
+cat >"$stubdir/makepkg.conf" <<CONF
+source /etc/makepkg.conf
+DLAGENTS=('https::$stubdir/dlstub %u %o' 'http::$stubdir/dlfail %u %o' 'ftp::$stubdir/dlfail %u %o')
+CONF
+stub_reset() { rm -f "$stubdir/calls" "$stubdir/deliver"; } # no call recorded, nothing to deliver
 build() {
     local name=$1
     shift
@@ -104,7 +130,7 @@ build() {
             env -u NVIDIA_TRT_SRC HOME="$tmp/home" \
                 BUILDDIR="$tmp/$name/build" PKGDEST="$tmp/$name/pkgdest" SRCDEST="$tmp/srcdest" \
                 LOGDEST="$tmp/logdest" PKGEXT=.pkg.tar "$@" \
-                makepkg -f -d --nosign --noconfirm
+                makepkg -f -d --nosign --noconfirm "${mkflags[@]}" --config "$stubdir/makepkg.conf"
     ) >"$log" 2>&1 || status=$?
     local -a pkgs=("$tmp/$name"/pkgdest/nvidia-tensorrt-sdk-local-*.pkg.tar)
     if ((${#pkgs[@]} == 1)) && [[ -f ${pkgs[0]} ]]; then pkg=${pkgs[0]}; fi
@@ -119,13 +145,31 @@ built() { # built <description>: the last build succeeded with one package.
     exit 1
 }
 logged() { grep -qF -- "$1" "$log"; } # logged <fragment>: the last build log has it
-srcinfo() { (cd "$recipe" && env -u NVIDIA_TRT_SRC makepkg --printsrcinfo); }
+# srcinfo [VAR=value...]: the metadata, with a fake HOME and no NVIDIA_TRT_SRC unless given.
+srcinfo() { (cd "$recipe" && env -u NVIDIA_TRT_SRC HOME="$tmp/home" "$@" makepkg --printsrcinfo); }
+mkdir -p "$tmp/home"
 srcinfo_before=$(srcinfo)
 check "the metadata provides nvidia-tensorrt-sdk" grep -qxF $'\tprovides = nvidia-tensorrt-sdk=11.4.0.106' <<<"$srcinfo_before"
+check "the metadata provides tensorrt" grep -qxF $'\tprovides = tensorrt=11.4.0.106' <<<"$srcinfo_before"
+check "the metadata has pkgrel 2" grep -qxF $'\tpkgrel = 2' <<<"$srcinfo_before"
+url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.4.0/tars/$name
+check "the metadata has the exact download URL, named as the archive" \
+    grep -qxF $'\tsource = '"$name::$url" <<<"$srcinfo_before"
+check "the metadata has the pinned checksum" grep -qxF $'\tsha256sums = '"$sum" <<<"$srcinfo_before"
+check "the metadata does not extract the download" grep -qxF $'\tnoextract = '"$name" <<<"$srcinfo_before"
 check "the metadata depends on cuda 13.4 or newer 13, and nvidia-utils" \
     test "$(grep -E $'^\tdepends = ' <<<"$srcinfo_before")" = $'\tdepends = cuda>=13.4\n\tdepends = cuda<14\n\tdepends = nvidia-utils'
-check "the metadata neither provides nor conflicts with tensorrt" \
-    not grep -qE $'^\t(provides|conflicts) = tensorrt' <<<"$srcinfo_before"
+check "the metadata has no conflicts" not grep -q $'^\tconflicts' <<<"$srcinfo_before"
+check "the metadata does not provide python-tensorrt" not grep -q 'python-tensorrt' <<<"$srcinfo_before"
+check "the environment's NVIDIA_TRT_SRC leaves no source in the metadata" \
+    test -z "$(srcinfo NVIDIA_TRT_SRC="$dl" | grep -E $'^\t(source|sha256sums|noextract) =' || true)"
+mkdir -p "$tmp/home3/Downloads"
+cp "$dl/$name" "$tmp/home3/Downloads/"
+check "an archive in ~/Downloads leaves no source in the metadata" \
+    test -z "$(srcinfo HOME="$tmp/home3" | grep -E $'^\t(source|sha256sums|noextract) =' || true)"
+mkdir -p "$tmp/home4/Downloads"
+cp "$dl/$name" "$tmp/home4/Downloads/TensorRT-other.tar.zst"
+check "another archive in ~/Downloads does not change the metadata" test "$(srcinfo HOME="$tmp/home4")" = "$srcinfo_before"
 
 R=/opt/nvidia/tensorrt
 r=${R#/}
@@ -160,6 +204,11 @@ check "trtexec stays executable" grep -qE "^-rwxr-xr-x .* $r/bin/trtexec\$" <<<"
 check "the files are root-owned" not grep -qvE '^[^ ]+ +[0-9]+ root +root ' <<<"$(grep " $r/" <<<"$verbose")"
 check "the acknowledgements are linked" link_to "$lic/Acknowledgements.txt" "$R/doc/Acknowledgements.txt"
 check "the licence agreement is linked" link_to "$lic/TensorRT-SLA.pdf" "$R/doc/TensorRT-SLA.pdf"
+check "the licence pointer is packaged" has "$lic/TERMS.txt"
+terms=$(bsdtar -xOf "$pkg" "$lic/TERMS.txt")
+check "it names the TensorRT SLA" grep -qF https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html <<<"$terms"
+check "it says the package must not be redistributed" grep -qF 'must not be redistributed' <<<"$terms"
+check "the licence pointer is a 644 file" grep -qE "^-rw-r--r-- .* $lic/TERMS.txt\$" <<<"$verbose"
 want="NVIDIA_TRT_ROOT=$R
 NVIDIA_TRT_INCLUDE_DIR=$R/include
 NVIDIA_TRT_LIBRARY_PATH=$R/lib
@@ -193,9 +242,69 @@ else
     echo "skip pkg-config resolution (no pkg-config, or no cudart.pc)"
 fi
 
+echo "== the download"
+# Reuse: a file of the archive's name in SRCDEST is not downloaded again.
+stub_reset
+mkdir -p "$tmp/sd-reuse"
+cp "$dl/$name" "$tmp/sd-reuse/$name"
+build reuse SRCDEST="$tmp/sd-reuse"
+built "makepkg -f -d builds from the archive already in SRCDEST"
+check "prepare() says the source is the download" logged "(from download: fetched by makepkg from $url"
+check "it verified the checksum" logged "SHA-256 $sum verified"
+check "nothing was fetched" test ! -e "$stubdir/calls"
+check "the package holds the library" grep -qxF "$r/lib/libnvinfer.so.11.4.0" <<<"$(bsdtar -tf "$pkg")"
+# Fetch: the stub is asked for the exact URL and delivers the fake archive.
+stub_reset
+printf '%s\n' "$dl/$name" >"$stubdir/deliver"
+mkdir -p "$tmp/sd-fetch"
+build fetch SRCDEST="$tmp/sd-fetch"
+built "makepkg -f -d downloads (stub) and builds"
+check "the URL asked for is exactly NVIDIA's" test "$(cat "$stubdir/calls")" = "$url"
+check "the download was saved under the archive's name" test -f "$tmp/sd-fetch/$name"
+check "it verified the checksum" logged "SHA-256 $sum verified"
+# A wrong file is refused by makepkg's own checksum validation.
+stub_reset
+cp "$dl/$name" "$tmp/wrong.tar.zst"
+printf 'x' >>"$tmp/wrong.tar.zst"
+printf '%s\n' "$tmp/wrong.tar.zst" >"$stubdir/deliver"
+mkdir -p "$tmp/sd-wrong"
+build wrong SRCDEST="$tmp/sd-wrong"
+check "a wrong download stops the build" test "$status" -ne 0
+check "makepkg reports the failed checksum" logged "FAILED"
+check "no package was built from it" test -z "$pkg"
+check "nothing was extracted" test -z "$(find "$tmp/wrong/build" -name NvInfer.h -print -quit)"
+# Without makepkg's own check (--skipchecksums), prepare() still compares the
+# pinned SHA-256 and calls a download incomplete or damaged, not another archive.
+stub_reset
+printf '%s\n' "$tmp/wrong.tar.zst" >"$stubdir/deliver"
+mkdir -p "$tmp/sd-wrong2"
+mkflags=(--skipchecksums)
+build wrong2 SRCDEST="$tmp/sd-wrong2"
+mkflags=()
+check "a wrong download stops prepare() too" test "$status" -ne 0
+check "it is called incomplete or damaged" logged "The download is incomplete or damaged: delete the copy of $name"
+check "it is not called another archive" not logged "is not the archive this recipe packages"
+# ~/Downloads: the exact file is used, with no download.
+stub_reset
+mkdir -p "$tmp/home2/Downloads"
+cp "$dl/$name" "$tmp/home2/Downloads/$name"
+cp "$dl/$name" "$tmp/home2/Downloads/TensorRT-other.tar.zst"
+build dldir HOME="$tmp/home2"
+built "makepkg -f -d uses the archive in ~/Downloads"
+check "prepare() names that exact file" logged "NVIDIA_TRT_SRC=$tmp/home2/Downloads/$name (from default)"
+check "it verified the checksum" logged "SHA-256 $sum verified"
+check "nothing was fetched" test ! -e "$stubdir/calls"
+# The environment wins over ~/Downloads, with no download either.
+build envwins HOME="$tmp/home2" NVIDIA_TRT_SRC="$stage/good/TensorRT-11.4.0.106"
+built "the environment's source wins over ~/Downloads"
+check "it is the environment's" logged "(from environment)"
+check "nothing was fetched" test ! -e "$stubdir/calls"
+stub_reset
+
 echo "== a tree, by selection.conf"
 printf '# test selection\nNVIDIA_TRT_SRC=%s\n' "$stage/good/TensorRT-11.4.0.106" >"$recipe/selection.conf"
-check "selection.conf does not change makepkg --printsrcinfo" test "$(srcinfo)" = "$srcinfo_before"
+check "a selection.conf naming a source leaves no source in makepkg --printsrcinfo" \
+    test -z "$(srcinfo | grep -E $'^\t(source|sha256sums|noextract) =' || true)"
 build conf
 built "makepkg -f -d builds from a tree in selection.conf"
 check "the source came from selection.conf" logged "NVIDIA_TRT_SRC=$stage/good/TensorRT-11.4.0.106 (from selection.conf)"
@@ -249,6 +358,11 @@ cp "$dl/$name" "$tmp/renamed/TensorRT-copy.tar.zst"
 build unpinnedrenamed NVIDIA_TRT_SRC="$tmp/renamed/TensorRT-copy.tar.zst"
 check "unpinned, an archive under another name stops the build" test "$status" -ne 0
 check "it names the expected archive" logged "is not the archive this recipe packages: expected $name, got TensorRT-copy.tar.zst"
+# A SRCDEST symlink to a differently named file is still the download makepkg accepted.
+mkdir -p "$tmp/sd-link"
+ln -s "$tmp/renamed/TensorRT-copy.tar.zst" "$tmp/sd-link/$name"
+build unpinnedlink SRCDEST="$tmp/sd-link"
+built "makepkg -f -d builds an unpinned download that is a SRCDEST symlink to another name"
 
 echo "== the ARM (aarch64) build"
 pin "$dl/$name"
@@ -377,7 +491,8 @@ check "the .pc file's libdir is there" grep -qxF "libdir=\${prefix}/targets/x86_
 pwned=$tmp/pwned
 # shellcheck disable=SC2016 # the hostile line is literal
 printf 'NVIDIA_TRT_SRC=$(touch %s)\n' "$pwned" >"$recipe/selection.conf"
-check "a hostile selection.conf does not change makepkg --printsrcinfo" test "$(srcinfo)" = "$srcinfo_before"
+srcinfo >/dev/null 2>&1 || true
+check "makepkg --printsrcinfo never executes a hostile selection.conf" test ! -e "$pwned"
 build hostile
 check "a hostile selection.conf stops the build" test "$status" -ne 0
 check "it names the line" logged "selection.conf:1: the value of NVIDIA_TRT_SRC must not contain"

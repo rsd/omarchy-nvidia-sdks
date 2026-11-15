@@ -1,42 +1,53 @@
 # Maintainer: Raul Dias
 #
-# A local Arch package of NVIDIA TensorRT, built from the user's OWN
-# download, so that several projects on one machine (e.g. an ONNX Runtime
-# build with the TensorRT execution provider) share one installation. For
-# personal use: each user accepts NVIDIA's TensorRT Software License
-# Agreement and downloads the archive from NVIDIA themselves (README.md).
-# This repository holds only the recipe. The built package contains NVIDIA
-# software: keep it on your own machine and never redistribute it (no
+# A local Arch package of NVIDIA TensorRT, so that several projects on one
+# machine (e.g. an ONNX Runtime build with the TensorRT execution provider)
+# share one installation. For personal use: the archive is downloaded from
+# NVIDIA by makepkg on your machine (NVIDIA serves it publicly, without a
+# login, under its TensorRT Software License Agreement), or is one you
+# supply. This repository holds only the recipe. The built package contains
+# NVIDIA software: keep it on your own machine and never redistribute it (no
 # repository, no AUR binary, no release, no sharing).
 #
 # The package is built from this working tree (the directory above), not
 # from a git clone, so nothing has to be committed to build it.
 #
-# Build-time input, from the environment variable of that name, else from
-# selection.conf in this directory (written by configure.sh), else the
-# default. prepare() prints the value and where it came from.
-#   NVIDIA_TRT_SRC  an absolute path (default: ~/Downloads): the archive
-#                   (_trt_archive below), a directory holding exactly one
-#                   TensorRT-*.tar.* archive, or an extracted tree (a
-#                   directory whose include/ holds NvInferVersion.h, or that
-#                   holds one such directory). source.sh has the rules.
-# An archive is copied into $srcdir once, and only that copy is read: it is
-# verified against _trt_sha256 (when one is pinned; else it must carry the
-# name _trt_archive, and its SHA-256 is checked against the one
-# configure.sh --write recorded, if any, and printed), its members are
+# Where TensorRT comes from (decided once, at global scope, so that makepkg
+# knows whether it has anything to download; first match wins):
+#   1. NVIDIA_TRT_SRC in the environment (not empty)       -> manual
+#   2. NVIDIA_TRT_SRC in selection.conf in this directory   -> manual
+#      (written by configure.sh; parsed as KEY=value lines by selection.sh,
+#      never sourced)
+#   3. the file ~/Downloads/<_trt_archive> exists           -> manual, that file
+#   4. otherwise                                            -> download
+# Manual: NVIDIA_TRT_SRC is an absolute path: the archive (_trt_archive
+# below), a directory holding exactly one TensorRT-*.tar.* archive, or an
+# extracted tree (a directory whose include/ holds NvInferVersion.h, or that
+# holds one such directory). source.sh has the rules. source=() is empty.
+# Download: makepkg fetches _trt_url (about 3.7 GB) into SRCDEST (default:
+# this directory; *.tar.zst is gitignored) and checks it against _trt_sha256
+# (SKIP when none is pinned). A file of that name already in this directory
+# or in SRCDEST is reused, so SRCDEST=~/Downloads makepkg -f reuses an
+# existing copy. Consequence: `makepkg --printsrcinfo` depends on the
+# environment, selection.conf and ~/Downloads; no .SRCINFO is published.
+# Global scope prints nothing and changes nothing; prepare() prints which
+# source is used and where it came from, and fails if it would decide
+# differently from global scope.
+# An archive, downloaded or not, is copied into $srcdir once, and only that
+# copy is read: it is verified against _trt_sha256 (when one is pinned; else
+# it must carry the name _trt_archive, and its SHA-256 is checked against the
+# one configure.sh --write recorded, if any, and printed), its members are
 # checked (not the ARM build; no device, fifo or socket, no symbolic link
 # that is absolute or leads out of the tree) and it is extracted with bsdtar
 # into $srcdir (never next to the download or into this repository). An
 # extracted tree has no checksum and is copied. Either way the tree in
 # $srcdir is checked again (the same refusals, the links resolved) and the
 # version in include/NvInferVersion.h must be pkgver.
-# selection.conf is parsed as KEY=value lines by selection.sh, never
-# sourced; it is read in prepare() only, so `makepkg --printsrcinfo` does
-# not depend on it.
 #
 # Build (from nvidia-tensorrt/), e.g.:
-#   ./configure.sh --src ~/Downloads --write
-#   makepkg -f
+#   makepkg -f                      # downloads, or uses ~/Downloads
+#   SRCDEST=~/Downloads makepkg -f  # downloads there, or reuses a copy
+#   ./configure.sh --src ~/Downloads --write && makepkg -f
 #   NVIDIA_TRT_SRC=~/Downloads/TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst makepkg -f
 # The package is several GiB; PKGEXT=.pkg.tar skips a slow compression:
 #   PKGEXT=.pkg.tar makepkg -f
@@ -57,8 +68,8 @@
 
 pkgname=nvidia-tensorrt-sdk-local
 pkgver=11.4.0.106
-pkgrel=1
-pkgdesc="NVIDIA TensorRT for CUDA 13.4, packaged from the user's own download under /opt/nvidia/tensorrt (personal use, not redistributable)"
+pkgrel=2
+pkgdesc="NVIDIA TensorRT for CUDA 13.4, downloaded from NVIDIA at build time, packaged under /opt/nvidia/tensorrt (personal use, not redistributable)"
 arch=('x86_64')
 url='https://developer.nvidia.com/tensorrt/download'
 license=('LicenseRef-NVIDIA-TensorRT')  # the TensorRT Software License Agreement
@@ -67,42 +78,90 @@ depends=(
   'cuda<14'       # and cudart.pc, which nvidia-tensorrt.pc requires
   'nvidia-utils'  # libcuda.so.1 (the driver)
 )
-# No provides/conflicts with the AUR's tensorrt: it installs under /usr, this
-# package under /opt/nvidia/tensorrt; no file overlaps, and a package that
-# depends on tensorrt expects the /usr paths (README.md).
-provides=("nvidia-tensorrt-sdk=$pkgver")
+# Coexists with the AUR's tensorrt split package (tensorrt,
+# tensorrt-cross-builder-libs, python-tensorrt), hence no conflicts: no file
+# overlaps (ours: /opt/nvidia/tensorrt, /usr/share/nvidia-tensorrt,
+# /usr/share/{licenses,doc}/nvidia-tensorrt-sdk-local; the AUR's: /usr/bin,
+# /usr/include, /usr/lib, /usr/share/licenses/tensorrt, site-packages) and
+# neither adds an ld.so.conf.d entry. We install no Python module (the wheels
+# are shipped, not installed), so python-tensorrt is not provided. Caveat: a
+# package that depends on tensorrt and is satisfied by this one must find
+# TensorRT through the environment file or pkg-config, not under /usr.
+provides=("nvidia-tensorrt-sdk=$pkgver" "tensorrt=$pkgver")
 # Keep NVIDIA's files byte-identical.
 options=('!strip' '!debug' 'staticlibs')
-# This repository's working tree; resolved at build time. Nothing is
-# downloaded: TensorRT comes from $NVIDIA_TRT_SRC.
+# This repository's working tree; resolved at build time.
 _repo=$(realpath -- "$startdir/..")
-source=()
 
-# The archive this recipe packages and its SHA-256 (as published in the Arch
-# User Repository's tensorrt recipe; NVIDIA's download page needs a login).
-# configure.sh reads these two lines. The archive is the Linux x86_64 build:
-# the ARM one (-Linux-aarch64- or -Linux-sbsa-) is refused. _trt_sha256 may
-# be left empty for a future release whose checksum nobody publishes: the
-# archive is then accepted by its name and contents, and its SHA-256 is
-# printed for you to compare with your download (and checked against the one
+# The archive this recipe packages, its SHA-256 (as published in the Arch
+# User Repository's tensorrt recipe) and where NVIDIA serves it (the same URL
+# as that recipe's). configure.sh reads the _trt_archive and _trt_sha256
+# lines: keep them as literal one-line assignments. The archive is the Linux
+# x86_64 build: the ARM one (-Linux-aarch64- or -Linux-sbsa-) is refused.
+# _trt_sha256 may be left empty for a future release whose checksum nobody
+# publishes: the archive is then accepted by its name and contents, and its
+# SHA-256 is printed for you to compare (and checked against the one
 # configure.sh --write recorded). This release's is pinned.
+_cudaver=13.4
 _trt_archive=TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst
 _trt_sha256=c67c87674cbe7b2337d1c30cb16d48686ab79ecb11bf08cb764b71f4f2bb711b
+_trt_url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/${pkgver%.*}/tars/TensorRT-Enterprise-${pkgver}-Linux-${CARCH}-cuda-${_cudaver}-Release-external.tar.zst
+
+# Manual or download (see the header). selection.sh only defines functions;
+# selection.conf is parsed, never sourced, and an invalid one (reported by
+# prepare()) counts as manual. Silent: this runs under --printsrcinfo.
+# shellcheck source=selection.sh
+. "$startdir/selection.sh"
+_trt_mode=download
+if [[ -n ${NVIDIA_TRT_SRC:-} ]]; then
+  _trt_mode=manual
+elif ! nvidia_trt_read_selection "$startdir/selection.conf" 2>/dev/null || [[ -n $nvidia_trt_file_src ]]; then
+  _trt_mode=manual
+elif [[ -f $HOME/Downloads/$_trt_archive ]]; then
+  _trt_mode=manual
+fi
+if [[ $_trt_mode == download ]]; then
+  source=("$_trt_archive::$_trt_url")
+  sha256sums=("${_trt_sha256:-SKIP}")
+  noextract=("$_trt_archive")
+else
+  source=()
+fi
 
 _root=/opt/nvidia/tensorrt
 
 prepare() {
-  # The source: environment variable > selection.conf > default. The helpers
-  # only define functions; selection.conf is parsed, never sourced.
+  # The source, by the precedence in the header. The helpers only define
+  # functions; selection.conf is parsed, never sourced.
   # shellcheck source=selection.sh
   . "$_repo/nvidia-tensorrt/selection.sh"
   # shellcheck source=source.sh
   . "$_repo/nvidia-tensorrt/source.sh"
   # What source.sh's refusal of the ARM build names.
   local trt_expected_archive=$_trt_archive trt_expected_version=$pkgver trt_download_url=$url
-  nvidia_trt_resolve "$startdir/selection.conf" "$HOME/Downloads" || return 1
+  if [[ ${_trt_url##*/} != "$_trt_archive" ]]; then
+    echo "the download URL names ${_trt_url##*/}, not _trt_archive ($_trt_archive)" >&2
+    return 1
+  fi
+  nvidia_trt_resolve "$startdir/selection.conf" "$HOME/Downloads/$_trt_archive" || return 1
+  # The decision global scope made, taken again: they must agree.
+  local mode=download
+  if [[ $nvidia_trt_src_from != default || -f $nvidia_trt_src ]]; then mode=manual; fi
+  if [[ $mode != "$_trt_mode" ]]; then
+    echo "the source changed while makepkg ran: global scope chose $_trt_mode, prepare() finds" \
+      "$mode (NVIDIA_TRT_SRC, selection.conf or ~/Downloads/$_trt_archive); run makepkg again" >&2
+    return 1
+  fi
   echo "TensorRT source:"
-  nvidia_trt_print_resolved
+  if [[ $_trt_mode == download ]]; then
+    # makepkg's symlink to the file it downloaded (or found in SRCDEST).
+    nvidia_trt_sha256=''
+    nvidia_trt_src=$(realpath -- "$srcdir/$_trt_archive") || return 1
+    echo "  $_trt_archive (from download: fetched by makepkg from $_trt_url," \
+      "or reused from a copy of that name in the recipe directory or SRCDEST)"
+  else
+    nvidia_trt_print_resolved
+  fi
   trt_locate "$nvidia_trt_src" || return 1
   echo "  layout $trt_layout: $trt_path"
   local arm
@@ -120,8 +179,9 @@ prepare() {
     cp --reflink=auto -- "$trt_path" "$copy" || return 1
     sum=$(trt_sha256 "$copy") || return 1
     if [[ -z $_trt_sha256 ]]; then
-      # Not pinned: the name must be the recipe's.
-      if [[ $name != "$_trt_archive" ]]; then
+      # Not pinned: the name must be the recipe's. A download is named by its
+      # source entry, not by what a SRCDEST symlink resolves to.
+      if [[ $_trt_mode != download && $name != "$_trt_archive" ]]; then
         echo "$trt_path is not the archive this recipe packages: expected $_trt_archive," \
           "got $name (SHA-256 $sum)" >&2
         return 1
@@ -129,7 +189,14 @@ prepare() {
     elif [[ $sum != "$_trt_sha256" ]]; then
       # The ARM build is named as such, not as a damaged download.
       trt_refuse_arm_archive "$copy" "$trt_path" || return 1
-      if [[ $name == "$_trt_archive" ]]; then
+      if [[ $_trt_mode == download ]]; then
+        # Named by the source entry whatever it resolves to; makepkg's own
+        # check catches this first, so this is reached with --skipchecksums.
+        echo "$trt_path: SHA-256 mismatch: expected $_trt_sha256, got $sum." \
+          "The download is incomplete or damaged: delete the copy of $_trt_archive in" \
+          "the recipe directory or SRCDEST (and $trt_path, if it is another file)" \
+          "so that makepkg downloads it again" >&2
+      elif [[ $name == "$_trt_archive" ]]; then
         echo "$trt_path: SHA-256 mismatch: expected $_trt_sha256, got $sum." \
           "The file is incomplete or damaged: download it again from $url" >&2
       else
@@ -213,7 +280,7 @@ includedir=\${prefix}/include
 libdir=\${prefix}/$librel
 
 Name: nvidia-tensorrt
-Description: NVIDIA TensorRT, from the user's own download
+Description: NVIDIA TensorRT (personal-use package)
 Version: $pkgver
 Requires: cudart
 Cflags: -I\${includedir}
@@ -278,6 +345,23 @@ EOF
     -o -iname '*acknowledg*' -o -iname '*notice*' \) -print0 | sort -z
     [[ ! -d $srcdir/tensorrt/doc ]] || find "$srcdir/tensorrt/doc" -maxdepth 2 -type f \
       \( -iname '*licen[cs]e*' -o -iname '*sla*' -o -iname '*acknowledg*' -o -iname '*notice*' \) -print0 | sort -z)
+
+  # A pointer to the licence terms, in our own words.
+  cat >"$licdir/TERMS.txt" <<EOF
+NVIDIA TensorRT ($pkgname $pkgver-$pkgrel)
+
+TensorRT is under NVIDIA's TensorRT Software License Agreement:
+https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html
+
+The archive was downloaded from NVIDIA by the makepkg of the user who built
+this package (NVIDIA serves it to that user under that licence; the recipe
+does not redistribute it), or was supplied by that user.
+
+This built package must not be redistributed. Only the runtime .so files may
+be redistributed, and only inside an application that adds material
+functionality (TensorRT SLA supplement, sections 2 and 1.2).
+EOF
+  chmod 644 "$licdir/TERMS.txt"
 
   install -Dm644 "$_repo/nvidia-tensorrt/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

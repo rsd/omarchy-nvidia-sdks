@@ -2,7 +2,8 @@
 # Guided setup of the NVIDIA SDK packages of this repository: checks the
 # machine, offers each SDK's optional downloads, finds and validates your own
 # download of each SDK you choose (from NGC, or a file you download in a
-# browser), and walks through configure.sh, makepkg, the installation, the
+# browser for Optical Flow; TensorRT is downloaded by makepkg), and walks
+# through configure.sh, makepkg, the installation, the
 # features an SDK adds after its install (NVIDIA's download_features.sh for
 # the Audio Effects SDK) and a read-only check of the result. It asks before
 # every step that changes anything (the default answer is always no) and
@@ -166,10 +167,12 @@ read_descriptor() {
         rel_words "${seen[$field]:-}" || die "$file: $field must be relative paths inside its directory"
     done
     # How the download is obtained: ngc (the package's download.sh with your
-    # own NGC CLI; the default) or browser (one file, downloaded by hand).
+    # own NGC CLI; the default), browser (one file, downloaded by hand) or
+    # auto (one file, which the recipe's makepkg downloads itself).
     : "${seen[obtain]:=ngc}"
-    [[ ${seen[obtain]} == ngc || ${seen[obtain]} == browser ]] || die "$file: obtain must be ngc or browser"
-    [[ ${seen[obtain]} != browser || -n ${seen[download_file]:-} ]] || die "$file: obtain=browser needs download_file="
+    [[ ${seen[obtain]} == ngc || ${seen[obtain]} == browser || ${seen[obtain]} == auto ]] ||
+        die "$file: obtain must be ngc, browser or auto"
+    [[ ${seen[obtain]} == ngc || -n ${seen[download_file]:-} ]] || die "$file: obtain=${seen[obtain]} needs download_file="
     [[ -z ${seen[download_file]:-} || ${seen[download_file]} =~ ^[A-Za-z0-9_.+*{}-]+$ ]] ||
         die "$file: download_file must be a file name (letters, digits, _ . + - * and {version})"
     for field in catalogue post_script; do
@@ -462,6 +465,9 @@ USAGE
         if in_list "$key" "${ph_keys[@]}"; then
             printf '  %-4s %s: access required, not installable yet (%s)\n       request: %s\n' "$key" \
                 "${D[$key:title]}" "${D[$key:summary]:-no summary}" "${D[$key:request_url]}"
+        elif [[ ${D[$key:obtain]} == auto ]]; then
+            printf '  %-4s %s %s: downloaded by makepkg from NVIDIA, or your own copy of %s\n       (%s)\n' "$key" \
+                "${D[$key:title]}" "${pkgver[$key]}" "$(download_name "$key")" "${D[$key:default_src]}"
         elif [[ ${D[$key:obtain]} == browser ]]; then
             printf '  %-4s %s %s: in a browser, %s from\n       %s (%s)\n' "$key" "${D[$key:title]}" \
                 "${pkgver[$key]}" "$(download_name "$key")" "${pkgurl[$key]}" "${D[$key:default_src]}"
@@ -958,11 +964,11 @@ download_cmd() { # download_cmd <key> <dir> [name...]: download.sh's argv
     return 0
 }
 # manual_steps <key> <dir> [name...]: how to get the SDK yourself, by the
-# descriptor's obtain= (ngc: the NGC steps and download.sh; browser: the
-# browser steps for its one file).
+# descriptor's obtain= (ngc: the NGC steps and download.sh; browser and auto:
+# the browser steps for its one file).
 manual_steps() {
     local key=$1 dir=$2
-    if [[ ${D[$key:obtain]} == browser ]]; then
+    if [[ ${D[$key:obtain]} != ngc ]]; then
         local file licence=${D[$key:licence]:-"NVIDIA's licence"}
         file=$(download_name "$key")
         cat <<EOF
@@ -1012,11 +1018,19 @@ sdk_src() {
         src=${src_arg[$key]} src_from="--src-$key"
     elif [[ -n ${!var:-} ]]; then
         src=${!var} src_from="the environment ($var)"
-    elif src=$(conf_src "$key" 2>/dev/null) && [[ -n $src ]]; then
-        src_from=$conf
     else
-        [[ -e $conf ]] && warn "$conf is not valid; looking in the default directory"
-        src=$(home_path "${D[$key:default_src]}") src_from="the default directory"
+        local cs
+        if cs=$(conf_src "$key" 2>/dev/null); then
+            :
+        else
+            cs=''
+            [[ -e $conf ]] && warn "$conf is not valid; looking in the default directory"
+        fi
+        if [[ -n $cs ]]; then
+            src=$cs src_from=$conf
+        else
+            src=$(home_path "${D[$key:default_src]}") src_from="the default directory"
+        fi
     fi
     return 0
 }
@@ -1106,9 +1120,17 @@ process() {
     say "  -- 2. Download: $src (from $src_from)"
     choose_features "$key"
     read -r -a sel <<<"${selection[$key]:-}"
-    local shown=0 valid=0 fetched=0 changed=0 name
+    local shown=0 valid=0 fetched=0 changed=0 auto_dl=0 lic name
+    local vsrc
     while :; do
-        if validate "$key" "$src"; then
+        # obtain=auto from the default directory: makepkg looks at the exact
+        # file only, so that is what is validated (other archives there do
+        # not matter); a named source is validated as given.
+        vsrc=$src
+        if [[ ${D[$key:obtain]} == auto && $src_from == "the default directory" && ! -f $src ]]; then
+            vsrc=$src/$(download_name "$key")
+        fi
+        if validate "$key" "$vsrc"; then
             valid=1
             if [[ -n ${D[$key:checksum_glob]:-} ]]; then
                 say "  The download is valid (configure.sh accepts it; $md5_count checksum(s) match)."
@@ -1144,6 +1166,37 @@ process() {
                 continue
             fi
             say "  Not fetched: the build packages what the download holds."
+            break
+        fi
+        if ((v_missing)) && [[ ${D[$key:obtain]} == auto ]]; then
+            if [[ $src_from != "the default directory" ]]; then
+                say "  No ${D[$key:title]} ${pkgver[$key]} download in $src (from $src_from)."
+                say "  makepkg would stop on it instead of downloading. Fix that source, or remove it so"
+                if [[ $src_from == "$conf" ]]; then
+                    say "  makepkg downloads the file: remove $conf (this script never deletes it),"
+                    say "  or run configure.sh --src <the file or its directory> --write again."
+                else
+                    say "  makepkg downloads the file: unset ${D[$key:env_prefix]}_SRC and do not pass --src-$key,"
+                    say "  or point it at the file, its directory or its extracted tree."
+                fi
+                say "  The steps by hand: $repo/${D[$key:byhand_doc]}"
+                state[$key]="stopped (its source does not exist)"
+                return 0
+            fi
+            if [[ -e $conf ]] && ! conf_src "$key" >/dev/null 2>&1; then
+                say "  $conf is not valid, so makepkg could not tell whether to download."
+                say "  Remove it (this script never deletes it) or run configure.sh --src <the file> --write again."
+                state[$key]="stopped (the selection.conf is not valid)"
+                return 0
+            fi
+            auto_dl=1
+            say "  No ${D[$key:title]} ${pkgver[$key]} download in $src."
+            say "  makepkg will download $(download_name "$key") from NVIDIA automatically,"
+            say "  when it builds the package, and check it against the SHA-256 the recipe pins."
+            lic=${D[$key:licence]:-"NVIDIA's licence"}
+            say "  It is under the $lic: read it before you build; by building"
+            say "  you accept it. To use a copy you downloaded yourself instead, or for the steps by"
+            say "  hand: $repo/${D[$key:byhand_doc]}"
             break
         fi
         if ((v_missing)); then
@@ -1195,68 +1248,71 @@ process() {
     ((valid)) || dl_packaged[$key]="$(for name in "${sel[@]}"; do printf '%s ' "${name%%-*}"; done)"
     # The wrong build is no download to go on with, in a dry run too: no
     # commands for after it.
-    if ((!valid && (!dry_run || v_wrong_build))); then
+    if ((!valid && !auto_dl && (!dry_run || v_wrong_build))); then
         say "  Skipped the ${D[$key:title]}."
         state[$key]="skipped (no valid download)"
         return 0
     fi
-    ((valid)) || say "  (The commands below are for after the download.)"
+    ((valid || auto_dl)) || say "  (The commands below are for after the download.)"
 
-    # 3. The selection.
-    say "  -- 3. Selection (selection.conf)"
-    # The options configure.sh takes (configure_select); without a detected
-    # GPU there is no command for an SDK that takes --archs.
-    local cfg_cmd=() cfg_opts=(--src "$src") cfg=$pkg_dir/${D[$key:configure]}
-    takes "$key" archs && cfg_opts+=(--archs "${archs_csv:-sm_<N>}")
-    takes "$key" features && cfg_opts+=(--features all)
-    if ((${#archs[@]} > 0)) || ! takes "$key" archs; then
-        cfg_cmd=("$cfg" "${cfg_opts[@]}" --write)
-    fi
-    local kept=0
-    if [[ -f $conf ]]; then
-        kept=1
-        say "  $conf exists; it is kept unless you replace it:"
-        "$cfg" --show 2>&1 | sed 's/^/    /' || true
-        if ((${#cfg_cmd[@]} > 0)); then
+    # 3. The selection. A download by makepkg has none: the PKGBUILD's
+    # download mode is used, which needs no selection.conf.
+    local cfg_cmd=() cfg_opts=(--src "$src") cfg=$pkg_dir/${D[$key:configure]} kept=0 rec
+    if ((auto_dl)); then
+        say "  -- 3. Selection: none (makepkg downloads the file; no selection.conf is written)"
+    else
+        say "  -- 3. Selection (selection.conf)"
+        # The options configure.sh takes (configure_select); without a detected
+        # GPU there is no command for an SDK that takes --archs.
+        takes "$key" archs && cfg_opts+=(--archs "${archs_csv:-sm_<N>}")
+        takes "$key" features && cfg_opts+=(--features all)
+        if ((${#archs[@]} > 0)) || ! takes "$key" archs; then
+            cfg_cmd=("$cfg" "${cfg_opts[@]}" --write)
+        fi
+        if [[ -f $conf ]]; then
+            kept=1
+            say "  $conf exists; it is kept unless you replace it:"
+            "$cfg" --show 2>&1 | sed 's/^/    /' || true
+            if ((${#cfg_cmd[@]} > 0)); then
+                if ((dry_run)); then
+                    say "  To replace it$(takes "$key" archs && echo " with the detected architectures"):"
+                    show_cmd "$(cmdline "${cfg_cmd[@]}")"
+                elif ask "Replace it with $(cmdline "${cfg_opts[@]}")?"; then
+                    "${cfg_cmd[@]}" || {
+                        warn "configure.sh failed (see above); the selection.conf is unchanged"
+                        state[$key]="stopped (configure.sh failed)"
+                        return 1
+                    }
+                    changed=1 kept=0
+                fi
+            fi
+        elif ((${#cfg_cmd[@]} == 0)); then
+            say "  No selection.conf. Without a detected GPU, write it yourself:"
+            show_cmd "$(cmdline "$cfg" "${cfg_opts[@]}" --write)"
+            state[$key]="stopped (no selection.conf)"
+            ((dry_run)) || return 0
+        else
+            show_cmd "$(cmdline "${cfg_cmd[@]}")"
             if ((dry_run)); then
-                say "  To replace it$(takes "$key" archs && echo " with the detected architectures"):"
-                show_cmd "$(cmdline "${cfg_cmd[@]}")"
-            elif ask "Replace it with $(cmdline "${cfg_opts[@]}")?"; then
+                :
+            elif ask "Write $conf with this selection?"; then
                 "${cfg_cmd[@]}" || {
-                    warn "configure.sh failed (see above); the selection.conf is unchanged"
+                    warn "configure.sh failed (see above)"
                     state[$key]="stopped (configure.sh failed)"
                     return 1
                 }
-                changed=1 kept=0
+                changed=1
+            else
+                say "  Not written. Run the command above yourself, then this script again."
+                state[$key]="stopped (no selection.conf)"
+                return 0
             fi
-        fi
-    elif ((${#cfg_cmd[@]} == 0)); then
-        say "  No selection.conf. Without a detected GPU, write it yourself:"
-        show_cmd "$(cmdline "$cfg" "${cfg_opts[@]}" --write)"
-        state[$key]="stopped (no selection.conf)"
-        ((dry_run)) || return 0
-    else
-        show_cmd "$(cmdline "${cfg_cmd[@]}")"
-        if ((dry_run)); then
-            :
-        elif ask "Write $conf with this selection?"; then
-            "${cfg_cmd[@]}" || {
-                warn "configure.sh failed (see above)"
-                state[$key]="stopped (configure.sh failed)"
-                return 1
-            }
-            changed=1
-        else
-            say "  Not written. Run the command above yourself, then this script again."
-            state[$key]="stopped (no selection.conf)"
-            return 0
         fi
     fi
 
     # A kept selection.conf names the source makepkg builds: when it is not
     # the download validated above, that source is validated and used
     # instead (for the staleness check below and in makepkg's environment).
-    local rec
     if ((kept)) && rec=$(conf_src "$key" 2>/dev/null) && [[ -n $rec ]] &&
         [[ $(realpath -m -- "$rec") != "$(realpath -m -- "$src")" ]]; then
         say "  The selection.conf records $rec, not $src: the build uses $rec unless you replace the selection.conf."
@@ -1277,8 +1333,8 @@ process() {
     # 4. The build, with <prefix>_SRC set to the source validated above, so
     # that a variable inherited from the environment cannot change it.
     say "  -- 4. Build"
-    local build_line build=0 why='' src_var=${D[$key:env_prefix]}_SRC
-    build_line=$(build_line "$key" "$src")
+    local mk_ok build_line build=0 why='' src_var=${D[$key:env_prefix]}_SRC
+    if ((auto_dl)); then build_line=$(build_line "$key"); else build_line=$(build_line "$key" "$src"); fi
     pkgfile=$(find_pkg "$key")
     # A built package is reused only when it is current: built after the
     # selection.conf and after everything in the download, in an earlier
@@ -1288,7 +1344,7 @@ process() {
             why="this run changed the download or the selection"
         elif [[ -e $conf && $conf -nt $pkgfile ]]; then
             why="$conf is newer"
-        elif [[ -e $src && -n $(find -H "$src" -newer "$pkgfile" -print -quit 2>/dev/null) ]]; then
+        elif ((!auto_dl)) && [[ -e $src && -n $(find -H "$src" -newer "$pkgfile" -print -quit 2>/dev/null) ]]; then
             why="the download in $src has newer files"
         fi
         if [[ -n $why ]]; then
@@ -1317,7 +1373,14 @@ process() {
         fi
     fi
     if ((build)); then
-        if ! (cd -- "$pkg_dir" && export "$src_var=$src" && PKGEXT=.pkg.tar makepkg -f); then
+        mk_ok=1
+        if ((auto_dl)); then
+            # The PKGBUILD's download mode: no source variable at all.
+            (cd -- "$pkg_dir" && unset "$src_var" && PKGEXT=.pkg.tar makepkg -f) || mk_ok=0
+        else
+            (cd -- "$pkg_dir" && export "$src_var=$src" && PKGEXT=.pkg.tar makepkg -f) || mk_ok=0
+        fi
+        if ((!mk_ok)); then
             warn "makepkg failed (see above); nothing was installed"
             state[$key]="stopped (makepkg failed)"
             return 1

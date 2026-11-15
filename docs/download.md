@@ -1,6 +1,6 @@
 # Downloading the Maxine SDKs
 
-Maxine is NVIDIA's family of AI video and audio effects. The `maxine-vfx-sdk-local`, `maxine-ar-sdk-local` and `maxine-afx-sdk-local` packages are built from files you download yourself from NGC after you accept NVIDIA's licence. NGC (NVIDIA GPU Cloud) is NVIDIA's online catalogue, and `ngc` is its command line tool. This repository does not contain, and cannot provide, any of those files.
+Maxine is NVIDIA's family of AI video and audio effects. The `maxine-vfx-sdk-local`, `maxine-ar-sdk-local` and `maxine-afx-sdk-local` packages are built from files you download yourself from NGC after you accept NVIDIA's licence. NGC (NVIDIA GPU Cloud) is NVIDIA's online catalogue, and `ngc` is its command line tool. This repository does not contain, and cannot provide, any of those files. For every SDK, what is downloaded, from where and whether it needs a login is listed in [What is downloaded, and from where](#what-is-downloaded-and-from-where).
 
 This page is a step-by-step guide for the Video Effects SDK 1.3.0.0 (Linux). An SDK is a software development kit: the libraries, headers and AI models a program uses. The [Maxine AR SDK](#maxine-ar-sdk) 1.2.0.0 and the [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) 3.0.0 have their own sections further down. They use the same prerequisites and the same NGC tool. Until those sections, the commands and names on this page are the Video Effects ones (`maxine-vfx/download.sh`).
 
@@ -576,6 +576,28 @@ sudo pacman -U maxine-afx-sdk-local-*.pkg.tar*
 ```
 
 `configure.sh` reads the directory without network access and writes the git-ignored `maxine-afx/selection.conf`. The build inputs, the source layouts and the other options are in [maxine-afx/README.md](../maxine-afx/README.md). Then continue with [usage.md](usage.md#maxine-audio-effects-sdk).
+
+## What is downloaded, and from where
+
+The table lists every file that the recipes use. It was checked on 2026-11-14 with HEAD requests and with anonymous NGC catalogue queries (no API key). NVIDIA changes its catalogue, so check the current state before you rely on a size.
+
+| Item | Current method | Public, no login? | Size | Checksum pinned in the recipe |
+|---|---|---|---|---|
+| TensorRT 11.4.0.106 archive (Linux x86_64, CUDA 13.4) | automatic (makepkg), or your own copy | yes: developer.nvidia.com → developer.download.nvidia.com, HTTP 200 | 3,725,547,403 bytes | yes, SHA-256 |
+| Optical Flow SDK 5.0.7 zip | browser, NVIDIA Developer Program login | no: the download link redirects to the login page | not shown without login | no (NVIDIA publishes none; `configure.sh --write` records yours) |
+| Video Effects SDK core `nvidia/maxine/vfx_sdk_core:1.3.0.0_linux` | NGC CLI with your API key | no: catalogue says not public, no guest download | not shown anonymously (`ngc ... info` with your key; see [Sizes](#sizes)) | no (size and file counts compared with NGC) |
+| AR SDK core `nvidia/maxine/ar_sdk_core:1.2.0.0_linux` | NGC CLI with key | no (same) | as above | no |
+| Audio Effects SDK core `nvidia/maxine/maxine_linux_audio_effects_sdk:3.0.0` | NGC CLI with key | no (same) | about 1.5 GB (NGC's figure for 3.0.0, 1,501,636,190 bytes) | no |
+| Video Effects features, `nvidia/maxine/<feature>:1.3.0.0_lib_linux` and `_models_linux_sm<N>` (8 features; models for green screen, denoising, relighting) | NGC CLI with key | no: the catalogue does not list them anonymously (HTTP 401/404 without a key) | see [Sizes](#sizes) | no; the models' `.trtpkg.md5` files from NVIDIA are checked |
+| AR SDK features, `nvidia/maxine/<feature>:1.2.0.0_lib_linux` / `_models_linux_sm<N>` (7 features) | NGC CLI with key | no (same) | see [AR SDK: sizes](#ar-sdk-sizes) | no; NVIDIA's `.md5` files checked |
+| Audio Effects effects, `nvidia/maxine/afx_<effect>:3.0.0-lib` and `3.0.0-<rate>-sm<N>` | NGC CLI with key | no (same) | see [AFX SDK: sizes](#afx-sdk-sizes) | no; NVIDIA's `.md5` files checked |
+| Audio Effects speaker focus (Early Access) | request access on NGC; may answer HTTP 402 | no | — | no; stays manual or skipped |
+| AR SDK Early Access collection | request only, not downloaded by any script | no | — | — |
+| NGC CLI 4.36.6 (`ngccli_linux.zip`) | you download it ([step 3](#3-install-the-ngc-cli)) | yes: public, guest download allowed | 59,137,746 bytes | no (checked against the md5 file shipped inside the zip) |
+
+The sizes that NGC shows anonymously for the Video Effects and AR cores belong only to their newest `_woa` (Windows on ARM) versions, so they are not quoted here.
+
+Only TensorRT is both public and pinned, so only TensorRT is downloaded automatically. The Maxine SDKs need your NGC key, and the Optical Flow SDK needs a login.
 
 ## Troubleshooting
 

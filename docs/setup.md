@@ -1,11 +1,11 @@
 # Guided setup
 
-`scripts/setup.sh` takes you from nothing to installed packages of the NVIDIA SDKs (software development kits: libraries, headers and AI models) that you download yourself. It runs the steps one at a time, shows each command before it runs it, and asks before it changes anything.
+`scripts/setup.sh` takes you from nothing to installed packages of the NVIDIA SDKs (software development kits: libraries, headers and AI models) that you download yourself, except TensorRT, which `makepkg` can download for you. It runs the steps one at a time, shows each command before it runs it, and asks before it changes anything.
 
 It knows five SDKs and one placeholder:
 
 - The Maxine Video Effects, AR and Audio Effects SDKs, downloaded from NGC (NVIDIA's online catalogue, NVIDIA GPU Cloud).
-- The Optical Flow SDK and TensorRT (NVIDIA's library for running AI models fast), each one file that you download in a browser.
+- The Optical Flow SDK and TensorRT (NVIDIA's library for running AI models fast), each one file. You download the Optical Flow SDK in a browser. For TensorRT, the script uses the file in `~/Downloads` if there is one. If there is none, `makepkg` downloads it from NVIDIA when the build runs.
 - A Maxine Early Access entry that is not installable yet.
 
 ## Quick start
@@ -20,7 +20,7 @@ You need an NVIDIA RTX GPU, an Arch-based distribution, the NVIDIA driver and a 
 
    *Success:* the output ends with `Dry run: nothing was asked, run or written.` Fix every line that contains `WARNING`.
 
-2. Download your SDK. **This step is yours.** For a Maxine SDK, log in to NVIDIA, accept the licence on its NGC page, create an API key, install the `ngc` tool and run `ngc config set` yourself (steps in [download.md](download.md#prerequisites)). For the Optical Flow SDK or TensorRT, download the file in a browser into `~/Downloads`. Never paste a key into a chat or give it to an AI agent.
+2. Download your SDK. **This step is yours.** For a Maxine SDK, log in to NVIDIA, accept the licence on its NGC page, create an API key, install the `ngc` tool and run `ngc config set` yourself (steps in [download.md](download.md#prerequisites)). For the Optical Flow SDK, download the file in a browser into `~/Downloads`. For TensorRT, you may put the file in `~/Downloads` yourself. If you do not, the script has `makepkg` download it from NVIDIA when the build runs, after it names NVIDIA's licence: read the licence before you build, because by building you accept it. (Plain `makepkg` in `nvidia-tensorrt/` does the same without this script; see [tensorrt.md](tensorrt.md#download).) Never paste a key into a chat or give it to an AI agent.
 
 3. Run the script for the SDK you want (`vfx`, `ar`, `afx`, `of` or `trt`):
 
@@ -120,7 +120,7 @@ For each SDK you chose, the script finds the download directory and validates it
 
 Before the download is checked, you choose the SDK's optional features. The script shows a numbered list of every optional feature of the SDK, with the default selection marked `[x]` and the features that need NVIDIA's approval marked `[access required: Maxine Early Access]`, followed by the page where to request it. The list is read from the package's `download.sh`, so it is the list of `download.sh --features`. Answer with numbers or names, `all`, or Enter for the default. `--help` prints the lists without running anything. The features are fetched together with the SDK, before the build, so the package contains them and pacman owns them.
 
-If the download is valid but lacks a selected feature, the script prints the `download.sh --features` command for the missing ones. If there is no usable download, it prints the manual steps and waits. These steps are yours:
+If the download is valid but lacks a selected feature, the script prints the `download.sh --features` command for the missing ones. If there is no usable download, it prints the manual steps and waits (for TensorRT it does not wait; see the TensorRT paragraph below). These steps are yours:
 
 1. Create or log in to your NVIDIA Developer Program account (a plain NGC account is not enough).
 2. Open the SDK's catalogue page, log in, select Get Access under NVIDIA Developer Program and accept NVIDIA's licence.
@@ -130,20 +130,22 @@ If the download is valid but lacks a selected feature, the script prints the `do
 
 The details of each step are in [download.md](download.md#prerequisites). The script then offers to run `download.sh` for you (only if `ngc` is on `PATH`, and only after a y/N; `download.sh` shows the sizes and asks again before it downloads). Whether you let it or ran the command yourself, press Enter to re-check the directory, or `s` to skip the SDK. The loop repeats until the download is valid or you skip.
 
-**The Optical Flow SDK and TensorRT** are downloaded in a browser, as one file each, so there is no NGC step, no `download.sh` and no optional feature. A missing download prints these steps, naming the SDK's licence, and never mentions NGC:
+**The Optical Flow SDK and TensorRT** are one file each, so there is no NGC step, no `download.sh` and no optional feature. The Optical Flow SDK is downloaded in a browser. For TensorRT the script looks for the file in `~/Downloads`. A missing Optical Flow download prints these steps, naming the SDK's licence, and never mentions NGC:
 
 1. Join the NVIDIA Developer Program, or log in to your account.
 2. Open the SDK's download page (`https://developer.nvidia.com/opticalflow/download` or `https://developer.nvidia.com/tensorrt/download`).
 3. Read the licence (the NVIDIA DesignWorks SDK License, or the NVIDIA TensorRT Software License Agreement) and select "Accept & Download" for the file the script names: `optical_flow_sdk_5.0.7.zip`, or `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst`.
 4. Save it in `~/Downloads` (where the script looks), or give its location with `--src-of PATH` or `--src-trt PATH`: the file, the directory holding it or its extracted tree.
 
-Then press Enter to re-check, or `s` to skip the SDK. The script validates the download with the package's `configure.sh --src`, which reads the zip or archive without extracting it and checks its version, and later `configure.sh --write` records the choice, with the SHA-256 of a zip or archive. The by-hand steps are in [optical-flow.md](optical-flow.md#download) and [tensorrt.md](tensorrt.md#download). The Optical Flow recipe was written against NVIDIA's documented layout of the SDK, not a real archive: if your zip differs, `configure.sh` stops with an error that names what it did not find.
+Then press Enter to re-check, or `s` to skip the SDK. The script validates the download with the package's `configure.sh --src`, which reads the zip or archive without extracting it and checks its version, and later `configure.sh --write` records the choice, with the SHA-256 of a zip or archive. The by-hand steps are in [optical-flow.md](optical-flow.md#download) and [tensorrt.md](tensorrt.md#download). The script then runs `makepkg` with the file it has checked, passed in `NVIDIA_TRT_SRC`, so the TensorRT build downloads nothing. The Optical Flow recipe was written against NVIDIA's documented layout of the SDK, not a real archive: if your zip differs, `configure.sh` stops with an error that names what it did not find.
+
+**TensorRT without a file** does not stop at a missing download. The script prints that `makepkg` will download `TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-external.tar.zst` from NVIDIA when it builds and checks it against the SHA-256 the recipe pins. It names NVIDIA's TensorRT Software License Agreement: read it before you build, because by building you accept it. It gives the by-hand route for a copy you download yourself, in [tensorrt.md](tensorrt.md#download). It writes no `selection.conf` (step 3 prints `Selection: none`) and runs `makepkg` without `NVIDIA_TRT_SRC`. A source that is named but missing (a stale `selection.conf`, or `--src-trt` or `NVIDIA_TRT_SRC` pointing at nothing), or a `selection.conf` that is not valid, stops TensorRT with a message and deletes nothing. Fix the source, or remove `selection.conf`, so that `makepkg` downloads the file.
 
 An SDK tree you extracted yourself (see [Alternative: an existing SDK tree](download.md#alternative-an-existing-sdk-tree)) is packaged as it is. `download.sh` cannot add features to it, so the script prints the commands to fetch a download directory of its own and to select that instead.
 
 ### 3. Selection
 
-If the SDK has no `selection.conf`, the script prints the `configure.sh --src DIR --archs sm_<N> --features all --write` command with your detected architecture and asks before writing it. `--features all` means that everything in your download is packaged, so the selection of features happened at download time. If a `selection.conf` exists it is shown and kept unless you agree to replace it.
+If the SDK has no `selection.conf`, the script prints the `configure.sh --src DIR --archs sm_<N> --features all --write` command with your detected architecture and asks before writing it. For TensorRT with no file found (step 2), step 3 prints `Selection: none` and writes nothing: `makepkg` downloads the file and the build needs no `selection.conf`. `--features all` means that everything in your download is packaged, so the selection of features happened at download time. If a `selection.conf` exists it is shown and kept unless you agree to replace it.
 
 ### 4. Build
 
@@ -227,7 +229,7 @@ It never runs `pacman -R`, `makepkg -i` or `makepkg -s`. Besides `sudo`, it runs
 
 The script has no per-SDK code. Each SDK is a descriptor in `scripts/setup.d/`, parsed as `KEY=value` text and never sourced. To add one, add a descriptor and the package directory it names. The format is in [scripts/setup.d/README](../scripts/setup.d/README); its capabilities, in short:
 
-- **How the download is obtained.** `obtain=ngc` (the default) uses the package's `download.sh` and your own NGC CLI. `obtain=browser` is for one file that you download in a browser after accepting a licence: the descriptor names the file (`download_file`, with `{version}` for the PKGBUILD's version) and the licence, and the script prints the browser steps.
+- **How the download is obtained.** `obtain=ngc` (the default) uses the package's `download.sh` and your own NGC CLI. `obtain=browser` is for one file that you download in a browser after accepting a licence: the descriptor names the file (`download_file`, with `{version}` for the PKGBUILD's version) and the licence, and the script prints the browser steps. `obtain=auto` is for one file that the recipe's `makepkg` downloads itself (a `source=` entry). The script uses a copy at the source when there is one; otherwise it says that `makepkg` will download the file, names the licence and gives the by-hand route. TensorRT uses it.
 - **What `configure.sh` takes.** `configure_select` says whether `--archs`, `--features`, both or neither is passed, so that an SDK without GPU architectures needs no detected GPU.
 - **What the check looks at.** Optionally a core library for `ldd`, optional libraries, libraries that must be on the system, files that must exist, and a model directory.
 - **Optional downloads and features after the install**, for an NGC SDK that has them (a catalogue read from its `download.sh`, and a script that adds features to the installed tree).

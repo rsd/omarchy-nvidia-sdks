@@ -151,7 +151,7 @@ mkdir -p "$tmp/home/Downloads"
 cp "$archive" "$tmp/home/Downloads/"
 run
 check "the default source is ~/Downloads" passes
-check "it says the default was used" says "from      the default (~/Downloads)"
+check "it says the default was used" says "from      the default (~/Downloads; the build looks for the pinned archive there, else downloads it)"
 check "it found the archive there" grep -qx "source $tmp/home/Downloads/$name" <<<"$stdout"
 run_env NVIDIA_TRT_SRC="$archive" --
 check "NVIDIA_TRT_SRC is a source" says "from      the environment (NVIDIA_TRT_SRC)"

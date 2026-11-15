@@ -99,10 +99,10 @@ show_selection() {
         return 1
     fi
     if [[ ! -e $conf ]]; then
-        echo "  no selection.conf ($conf): the build uses NVIDIA_TRT_SRC or the default (~/Downloads)"
+        echo "  no selection.conf ($conf): the build uses NVIDIA_TRT_SRC, else ~/Downloads/<the pinned archive> if it exists, else downloads it"
     else
         echo "  $conf:"
-        echo "  NVIDIA_TRT_SRC=${nvidia_trt_file_src:-(not set: ~/Downloads)}"
+        echo "  NVIDIA_TRT_SRC=${nvidia_trt_file_src:-(not set: ~/Downloads/<the pinned archive> if it exists, else a download)}"
         [[ -z $nvidia_trt_file_sha256 ]] || echo "  NVIDIA_TRT_SHA256=$nvidia_trt_file_sha256"
     fi
     [[ -z ${NVIDIA_TRT_SRC:-} ]] ||
@@ -116,7 +116,7 @@ if ((show)); then
 fi
 
 # The source: --src, else the environment, else selection.conf, else
-# ~/Downloads.
+# ~/Downloads (to look at; the build itself uses the exact archive file there, else downloads).
 if [[ -n $src_arg ]]; then
     src=$src_arg src_from=--src
 elif [[ -n ${NVIDIA_TRT_SRC:-} ]]; then
@@ -126,7 +126,7 @@ else
     if [[ -n $nvidia_trt_file_src ]]; then
         src=$nvidia_trt_file_src src_from=$conf
     else
-        src=$HOME/Downloads src_from="the default (~/Downloads)"
+        src=$HOME/Downloads src_from="the default (~/Downloads; the build looks for the pinned archive there, else downloads it)"
     fi
 fi
 trt_locate "$src" || die "cannot use $src (from $src_from; see README.md)"

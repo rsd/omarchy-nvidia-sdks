@@ -965,36 +965,87 @@ check "before the browser steps" before_steps
 mv "$tmp/of-configure.orig" "$of_dir/configure.sh"
 rmdir "$tmp/of-empty"
 
-echo "== TensorRT (a browser download)"
+echo "== TensorRT (downloaded by makepkg, or your own copy)"
 not_installed
 trt_name=nvidia-tensorrt-sdk-local
 trt_pkg=$trt_dir/$trt_name-11.4.0.106-1-x86_64.pkg.tar
 trt_arc=$home/Downloads/$trt_file
 trt_root=$root/opt/nvidia/tensorrt
 run -- --help
-check "--help lists it as a browser download with its file" \
-    says "trt  TensorRT 11.4.0.106: in a browser, $trt_file from"
+check "--help lists it as downloaded by makepkg, with its file" \
+    says "trt  TensorRT 11.4.0.106: downloaded by makepkg from NVIDIA, or your own copy of $trt_file"
 run -- --sdk trt --dry-run
 check "a dry run passes" passes
-check "it names the archive and the version" says "$trt_file (version 11.4.0.106)"
+check "it says makepkg downloads the archive" \
+    says "makepkg will download $trt_file from NVIDIA automatically"
 check "it names the licence" says "NVIDIA TensorRT Software License Agreement"
-check "it names the download page" says "https://developer.nvidia.com/tensorrt/download"
 check "it points at its steps by hand" says "$repo/docs/tensorrt.md#download"
+check "it prints no browser steps" not says "Join the NVIDIA Developer Program"
 check "it never mentions NGC" no_ngc
-check "it prints the configure command, without --archs" \
-    says "$trt_dir/configure.sh --src $home/Downloads --write"
+check "it prints no configure command" not says "configure.sh --src"
+check "it prints the build command without a source" \
+    says "(cd $trt_dir && PKGEXT=.pkg.tar makepkg -f)"
 check "nothing that changes anything ran" nothing_changed
+answers='y\n'
+run NVIDIA_TRT_SRC="$home/Downloads/missing.tar.zst" -- --sdk trt --dry-run
+check "a source named in the environment that is missing stops it" says "makepkg would stop on it"
+check "it names the variable" says "unset NVIDIA_TRT_SRC"
+echo "NVIDIA_TRT_SRC=$home/Downloads/gone.tar.zst" >"$trt_dir/selection.conf"
+run -- --sdk trt
+check "a stale selection.conf stops it" says "No TensorRT 11.4.0.106 download in $home/Downloads/gone.tar.zst"
+check "it says to remove it or write it again" says "remove $trt_dir/selection.conf"
+check "it did not build" not called makepkg
+check "it did not write or delete the selection.conf" \
+    grep -qx "NVIDIA_TRT_SRC=$home/Downloads/gone.tar.zst" "$trt_dir/selection.conf"
+rm -f "$trt_dir/selection.conf"
+answers='y\nn\n'
+run -- --sdk trt
+check "no archive: build yes, install no passes" passes
+check "the download message is printed" says "makepkg will download $trt_file from NVIDIA automatically"
+check "makepkg ran in the recipe" called "makepkg -f (PKGEXT=.pkg.tar in $trt_dir)"
+check "makepkg got no NVIDIA_TRT_SRC" not grep -q '^makepkg-env NVIDIA_TRT_SRC' "$calls"
+check "configure.sh --write was not called" not called "configure.sh --src $trt_arc --write"
+check "no configure.sh call had --write" not grep -q "^configure.sh .*--write" "$calls"
+check "no selection.conf was written" test ! -e "$trt_dir/selection.conf"
+check "the install command is printed" says "sudo pacman -U $trt_pkg"
+rm -f "$trt_pkg"
+answers='y\nn\n'
+run NVIDIA_TRT_SRC= -- --sdk trt
+check "an empty NVIDIA_TRT_SRC is no source" called "makepkg -f (PKGEXT=.pkg.tar in $trt_dir)"
+check "it still got none" not grep -q '^makepkg-env NVIDIA_TRT_SRC' "$calls"
+rm -f "$trt_pkg"
 fake "$trt_arc"
 answers='y\ny\nn\n'
 run -- --sdk trt
 check "a valid archive: selection yes, build yes, install no passes" passes
 check "the archive is found" says "Found: $trt_arc"
+check "no download message" not says "will download"
 check "configure.sh wrote the selection" called "configure.sh --src $trt_arc --write"
 check "makepkg ran in the recipe" called "makepkg -f (PKGEXT=.pkg.tar in $trt_dir)"
+check "makepkg got the archive in NVIDIA_TRT_SRC" called "makepkg-env NVIDIA_TRT_SRC=$trt_arc"
 check "the install command is printed" says "sudo pacman -U $trt_pkg"
 check "the declined install ran no sudo" not called sudo
 rm -f "$trt_dir/selection.conf"
 rm -f "$trt_pkg"
+other_arc=$home/Downloads/TensorRT-Enterprise-10.0.0.1-Linux-x86_64-cuda-12.0-Release-external.tar.zst
+fake "$trt_arc" "$other_arc"
+answers='y\ny\nn\n'
+run -- --sdk trt
+check "exact file plus another archive: it passes" passes
+check "the exact file is found" says "Found: $trt_arc"
+check "configure.sh got the exact file" called "configure.sh --src $trt_arc --write"
+check "makepkg got the exact file" called "makepkg-env NVIDIA_TRT_SRC=$trt_arc"
+rm -f "$trt_dir/selection.conf" "$trt_pkg" "$trt_arc"
+answers='y\nn\n'
+run -- --sdk trt
+check "only another archive: it passes" passes
+check "it goes to the automatic download" says "makepkg will download $trt_file from NVIDIA automatically"
+check "makepkg got no NVIDIA_TRT_SRC" not grep -q '^makepkg-env NVIDIA_TRT_SRC' "$calls"
+rm -f "$trt_pkg" "$other_arc"
+printf 'NVIDIA_TRT_SHA256=%s\n' "$(printf '%064d' 0)" >"$trt_dir/selection.conf"
+run -- --sdk trt --dry-run
+check "a selection.conf naming no source does not warn" not says "is not valid"
+rm -f "$trt_dir/selection.conf"
 rm -f "$trt_arc"
 fake "$trt_root/include/NvInfer.h" "$trt_root/include/NvInferVersion.h" \
     "$trt_root/lib/pkgconfig/nvidia-tensorrt.pc" "$trt_root/lib/libnvinfer.so"

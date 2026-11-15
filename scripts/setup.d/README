@@ -40,14 +40,23 @@ How the download is obtained:
                 Accept & Download download_file, save it in default_src or
                 pass --src-KEY) and waits for Enter to re-check or s to skip.
                 It never mentions NGC or download.sh.
+                auto: one file, like browser, which the recipe's makepkg
+                downloads itself (a source= entry). A download found at the
+                source (--src-KEY, <PREFIX>_SRC, selection.conf, default_src)
+                is used as with browser. Without one, setup.sh prints that
+                makepkg downloads download_file from NVIDIA (and names the
+                licence), runs makepkg without <PREFIX>_SRC and does not run
+                configure.sh --write. A source that is named but does not
+                exist (a stale selection.conf, --src-KEY, <PREFIX>_SRC) stops
+                that SDK with a message; selection.conf is never deleted.
   download_file the file of a one-file download (required with
-                obtain=browser); {version} is the PKGBUILD's pkgver. A
+                obtain=browser or auto); {version} is the PKGBUILD's pkgver. A
                 directory without a file matching it ({version} as *) that
                 configure.sh refuses is a missing download. The download
                 that configure.sh accepts is selected as the file it reports
                 on its "source <path>" line.
-  licence       the licence named in the browser steps (default: NVIDIA's
-                licence)
+  licence       the licence named in the browser steps and the auto message
+                (default: NVIDIA's licence)
 
 configure.sh:
   configure_select  the options `configure --src PATH ... --write` takes
