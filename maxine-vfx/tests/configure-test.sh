@@ -191,6 +191,25 @@ check "an absent feature fails" fails_with "feature nvvfxdenoising is not presen
 check "it names the fetch command" \
     says "ngc registry model download-version \"nvidia/maxine/nvvfxdenoising:1.3.0.0_lib_linux\" --dest $dl"
 check "the file is unchanged" cmp -s "$conf" "$tmp/saved.conf"
+# --conf: another file (an AUR clone's, next to its PKGBUILD).
+mkdir -p "$tmp/clone"
+run --src "$dl" --archs sm_89 --features nvvfxgreenscreen --conf "$tmp/clone/selection.conf" --write
+check "--conf --write saves into that file" \
+    test "$(grep -v '^#' "$tmp/clone/selection.conf")" = "MAXINE_VFX_SRC=$dl"$'\n'"MAXINE_VFX_ARCHS=sm_89"$'\n'"MAXINE_VFX_FEATURES=nvvfxgreenscreen"
+check "and leaves the one next to configure.sh as it was" cmp -s "$conf" "$tmp/saved.conf"
+check "the next step builds in that directory" says "Next: (cd $tmp/clone && makepkg -f)"
+run --conf "$tmp/clone/selection.conf" --show
+check "--conf --show reads that file" says "MAXINE_VFX_FEATURES=nvvfxgreenscreen"
+# --conf naming a directory, or ending in . or .., is refused; --write leaves
+# nothing behind (no file in the directory, no stray temporary file).
+mkdir -p "$tmp/confdir"
+for c in "$tmp/confdir" "$tmp/confdir/." "$tmp/confdir/.."; do
+    run --src "$dl" --archs sm_89 --features nvvfxgreenscreen --conf "$c" --write
+    check "--conf $c --write is refused" fails_with "is a directory, not a file name"
+    check "and leaves no file in the directory" test -z "$(find "$tmp/confdir" -mindepth 1 -print -quit)"
+    check "and no temporary file next to it" test -z "$(find "$tmp" -maxdepth 1 -name '.selection.conf.*' -print -quit)"
+done
+rmdir "$tmp/confdir"
 run --src "$dl" --archs "all sm_120" --write
 check "'all' with another architecture fails" fails_with "'all' must be the only --archs entry"
 run --src "$dl" --archs 8.9 --write

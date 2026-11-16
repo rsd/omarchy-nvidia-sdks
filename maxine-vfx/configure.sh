@@ -27,6 +27,12 @@
 # default (architectures sm_120, features all). See selection.sh for the
 # file's format and the PKGBUILD for the precedence (environment variable >
 # selection.conf > default).
+#
+# --conf FILE reads and writes FILE instead of the selection.conf next to
+# this script. The build reads selection.conf next to the PKGBUILD it runs:
+# from an AUR clone, where this script is under src/, give
+# --conf <the clone>/selection.conf. That directory is also where the
+# printed `makepkg` commands run.
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
@@ -43,21 +49,22 @@ die() {
 warn() { printf '%s: WARNING: %s\n' "$prog" "$*" >&2; }
 usage() {
     cat >&2 <<EOF
-usage: $prog [--src DIR]
-       $prog [--src DIR] [--archs "sm_120 sm_89" | all] [--features "f1 f2" | all] [--write]
-       $prog --show
+usage: $prog [--src DIR] [--conf FILE]
+       $prog [--src DIR] [--conf FILE] [--archs "sm_120 sm_89" | all] [--features "f1 f2" | all] [--write]
+       $prog [--conf FILE] --show
        $prog --detect-gpu
 EOF
     exit 2
 }
 
-src_arg='' archs_arg='' features_arg='' write=0 show=0 detect=0
+src_arg='' conf_arg='' archs_arg='' features_arg='' write=0 show=0 detect=0
 while (($#)); do
     case $1 in
-        --src | --archs | --features)
+        --src | --archs | --features | --conf)
             (($# >= 2)) || usage
             case $1 in
                 --src) src_arg=$2 ;;
+                --conf) conf_arg=$2 ;;
                 --archs) archs_arg=$2 ;;
                 --features) features_arg=$2 ;;
             esac
@@ -119,18 +126,31 @@ sort_numbers() { (($# == 0)) || printf '%s\n' "$@" | sort -n -u; }
 sort_names() { (($# == 0)) || printf '%s\n' "$@" | LC_ALL=C sort -u; }
 q() { printf '%q' "$1"; } # a path as a shell word, for the printed commands
 
+# The selection.conf read and written: --conf, else the one next to this
+# script; builddir is the directory it is in (the PKGBUILD's, for the build).
+if [[ -n $conf_arg ]]; then
+    [[ $conf_arg != *$'\n'* && $conf_arg != */ && -d $(dirname -- "$conf_arg") ]] ||
+        die "--conf $(q "$conf_arg"): not a file name in an existing directory"
+    [[ ! -d $conf_arg && ${conf_arg##*/} != . && ${conf_arg##*/} != .. ]] ||
+        die "--conf $(q "$conf_arg"): is a directory, not a file name"
+    conf=$(cd -- "$(dirname -- "$conf_arg")" && pwd)/${conf_arg##*/}
+fi
+builddir=${conf%/*}
+conf_opt='' # repeated in the printed commands when not the default
+[[ $conf == "$here/selection.conf" ]] || conf_opt=" --conf $(q "$conf")"
+
 # show_selection: the current selection.conf, or the defaults.
 show_selection() {
     if ! maxine_vfx_read_selection "$conf"; then
-        echo "   $conf is not valid (see above); fix it or write it again with --write"
+        echo "   $conf is not valid (see above); fix it or write it again with --write$conf_opt"
         return 1
     fi
     if [[ ! -e $conf ]]; then
         echo "   no selection.conf ($conf): the build uses the environment or the defaults"
-        echo "   (MAXINE_VFX_SRC=$here, MAXINE_VFX_ARCHS=sm_120, MAXINE_VFX_FEATURES=all)"
+        echo "   (MAXINE_VFX_SRC=$builddir, MAXINE_VFX_ARCHS=sm_120, MAXINE_VFX_FEATURES=all)"
     else
         echo "   $conf:"
-        echo "   MAXINE_VFX_SRC=${maxine_vfx_file_src:-(not set: $here)}"
+        echo "   MAXINE_VFX_SRC=${maxine_vfx_file_src:-(not set: $builddir)}"
         echo "   MAXINE_VFX_ARCHS=${maxine_vfx_file_archs:-(not set: sm_120)}"
         echo "   MAXINE_VFX_FEATURES=${maxine_vfx_file_features:-(not set: all)}"
     fi
@@ -174,7 +194,7 @@ if ((detect)); then
         fi
     done <<<"$gpus"
     if ((${#suggest[@]} > 0)); then
-        echo "Suggested: $prog --archs \"${suggest[*]}\" --write"
+        echo "Suggested: $prog --archs \"${suggest[*]}\" --write$conf_opt"
     fi
     exit 0
 fi
@@ -335,7 +355,7 @@ if [[ -n $archs_arg$features_arg ]] || ((write)); then
         echo "  MAXINE_VFX_FEATURES=$new_features"
         exit 0
     fi
-    tmpfile=$(mktemp "$here/.selection.conf.XXXXXX")
+    tmpfile=$(mktemp "$builddir/.selection.conf.XXXXXX")
     trap 'rm -f -- "$tmpfile"' EXIT
     {
         echo "# The maxine-vfx build selection, written by configure.sh. The PKGBUILD"
@@ -351,14 +371,14 @@ if [[ -n $archs_arg$features_arg ]] || ((write)); then
         die "the path $src cannot be stored in selection.conf (it holds \$, a backtick, a quote" \
             "or a control character): rename it, or set MAXINE_VFX_SRC in the environment instead"
     chmod 644 -- "$tmpfile"
-    mv -f -- "$tmpfile" "$conf"
+    mv -fT -- "$tmpfile" "$conf"
     trap - EXIT
     echo "Wrote $conf:"
     grep -v '^#' "$conf" | sed 's/^/  /'
     if [[ $layout == tree ]] && ((!feat_all)) && ((${#selected[@]} < ${#present[@]})); then
         echo "  note: in an SDK tree the model files are not tied to a feature: lib/models keeps those of the features left out"
     fi
-    echo "Next: (cd $(q "$here") && makepkg -f)"
+    echo "Next: (cd $(q "$builddir") && makepkg -f)"
     exit 0
 fi
 
@@ -420,7 +440,7 @@ fi
 echo "Commands:"
 if ((${#present[@]} > 0)); then
     echo "  save a selection (validated against what is present):"
-    echo "    $(q "$0") --src $(q "$src") --archs $(q "$suggest_archs") --features ${maxine_vfx_file_features:-all} --write"
+    echo "    $(q "$0") --src $(q "$src") --archs $(q "$suggest_archs") --features ${maxine_vfx_file_features:-all} --write$conf_opt"
 fi
 if [[ $layout == download ]]; then
     echo "  fetch more into the same directory, with your own NGC CLI (download.sh shows the sizes and asks first):"
@@ -434,4 +454,4 @@ else
     echo "  $tree_note"
 fi
 echo "  build:"
-echo "    (cd $(q "$here") && makepkg -f)"
+echo "    (cd $(q "$builddir") && makepkg -f)"

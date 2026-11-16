@@ -1,4 +1,4 @@
-# Maintainer: Raul Dias
+# Maintainer: Raul Dias <raul@dias.com.br>
 #
 # A local Arch package of NVIDIA TensorRT, so that several projects on one
 # machine (e.g. an ONNX Runtime build with the TensorRT execution provider)
@@ -17,19 +17,22 @@
 #   1. NVIDIA_TRT_SRC in the environment (not empty)       -> manual
 #   2. NVIDIA_TRT_SRC in selection.conf in this directory   -> manual
 #      (written by configure.sh; parsed as KEY=value lines by selection.sh,
-#      never sourced)
+#      never sourced; a file with any line that is not blank, a comment or
+#      a valid NVIDIA_TRT_SHA256= is manual too, and prepare() reports it)
 #   3. the file ~/Downloads/<_trt_archive> exists           -> manual, that file
 #   4. otherwise                                            -> download
 # Manual: NVIDIA_TRT_SRC is an absolute path: the archive (_trt_archive
 # below), a directory holding exactly one TensorRT-*.tar.* archive, or an
 # extracted tree (a directory whose include/ holds NvInferVersion.h, or that
-# holds one such directory). source.sh has the rules. source=() is empty.
+# holds one such directory). source.sh has the rules. No archive is in
+# source=().
 # Download: makepkg fetches _trt_url (about 3.7 GB) into SRCDEST (default:
-# this directory; *.tar.zst is gitignored) and checks it against _trt_sha256
+# this directory) and checks it against _trt_sha256
 # (SKIP when none is pinned). A file of that name already in this directory
 # or in SRCDEST is reused, so SRCDEST=~/Downloads makepkg -f reuses an
 # existing copy. Consequence: `makepkg --printsrcinfo` depends on the
-# environment, selection.conf and ~/Downloads; no .SRCINFO is published.
+# environment, selection.conf and ~/Downloads; a published .SRCINFO is the
+# download case (none of the three set).
 # Global scope prints nothing and changes nothing; prepare() prints which
 # source is used and where it came from, and fails if it would decide
 # differently from global scope.
@@ -101,7 +104,8 @@ conflicts=('tensorrt')
 provides=("nvidia-tensorrt-sdk=$pkgver" "tensorrt=$pkgver")
 # Keep NVIDIA's files byte-identical.
 options=('!strip' '!debug' 'staticlibs')
-# This repository's working tree; resolved at build time.
+# The recipe's helpers (its scripts, the shim's source, the documents it
+# installs): this repository's working tree, resolved at build time.
 _repo=$(realpath -- "$startdir/..")
 
 # The archive this recipe packages, its SHA-256 (as published in the Arch
@@ -118,19 +122,39 @@ _trt_archive=TensorRT-Enterprise-11.4.0.106-Linux-x86_64-cuda-13.4-Release-exter
 _trt_sha256=c67c87674cbe7b2337d1c30cb16d48686ab79ecb11bf08cb764b71f4f2bb711b
 _trt_url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/${pkgver%.*}/tars/TensorRT-Enterprise-${pkgver}-Linux-${CARCH}-cuda-${_cudaver}-Release-external.tar.zst
 
-# Manual or download (see the header). selection.sh only defines functions;
-# selection.conf is parsed, never sourced, and an invalid one (reported by
-# prepare()) counts as manual. Silent: this runs under --printsrcinfo.
-# shellcheck source=selection.sh
-. "$startdir/selection.sh"
+# Manual or download (see the header). selection.conf is never sourced
+# here. It leaves the download case only when it holds nothing but blank
+# lines, comments and one NVIDIA_TRT_SHA256=<64 hex digits> line (which
+# applies to no source of its own): any other line, valid or not, and a
+# file that cannot be read, make it manual, so an invalid file is reported
+# by prepare() (which parses it with selection.sh and stops on any line
+# that is not valid) before anything is downloaded. The helpers are not
+# read here: in a copy that fetches them (the AUR's), they do not exist
+# yet. Silent: this runs under --printsrcinfo.
 _trt_mode=download
+_trt_conf=$startdir/selection.conf
 if [[ -n ${NVIDIA_TRT_SRC:-} ]]; then
   _trt_mode=manual
-elif ! nvidia_trt_read_selection "$startdir/selection.conf" 2>/dev/null || [[ -n $nvidia_trt_file_src ]]; then
-  _trt_mode=manual
-elif [[ -f $HOME/Downloads/$_trt_archive ]]; then
+elif [[ -e $_trt_conf || -L $_trt_conf ]]; then
+  if [[ ! -f $_trt_conf || ! -r $_trt_conf ]]; then
+    _trt_mode=manual
+  else
+    _trt_sha_lines=0
+    while IFS= read -r _trt_line || [[ -n $_trt_line ]]; do
+      [[ $_trt_line =~ ^[[:space:]]*(#|$) ]] && continue
+      if [[ $_trt_line =~ ^NVIDIA_TRT_SHA256=[0-9a-f]{64}$ ]] && ((++_trt_sha_lines == 1)); then
+        continue
+      fi
+      _trt_mode=manual
+      break
+    done <"$_trt_conf"
+    unset _trt_line _trt_sha_lines
+  fi
+fi
+if [[ $_trt_mode == download && -f $HOME/Downloads/$_trt_archive ]]; then
   _trt_mode=manual
 fi
+unset _trt_conf
 if [[ $_trt_mode == download ]]; then
   source=("$_trt_archive::$_trt_url")
   sha256sums=("${_trt_sha256:-SKIP}")
@@ -218,7 +242,8 @@ prepare() {
     fi
     if [[ -n $nvidia_trt_sha256 && $nvidia_trt_sha256 != "$sum" ]]; then
       echo "$trt_path changed since configure.sh --write recorded SHA-256 $nvidia_trt_sha256" \
-        "(now $sum): run configure.sh --write again" >&2
+        "(now $sum): run $(printf %q "$(realpath -- "$_repo/nvidia-tensorrt/configure.sh")")" \
+        "--conf $(printf %q "$startdir/selection.conf") --src $(printf %q "$trt_path") --write again" >&2
       return 1
     fi
     if [[ -n $_trt_sha256 ]]; then

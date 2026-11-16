@@ -1,9 +1,10 @@
-# Maintainer: Raul Dias
+# Maintainer: Raul Dias <raul@dias.com.br>
 #
 # A local Arch package of the NVIDIA Optical Flow SDK, built from the user's
 # OWN download, so that several projects on one machine share one
 # installation. For personal use: each user accepts NVIDIA's licence and
-# downloads the SDK from NVIDIA's developer site themselves (README.md).
+# downloads the SDK from NVIDIA's developer site themselves, as described
+# in https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/optical-flow.md
 # This repository holds only the recipe. The built package contains NVIDIA
 # software: keep it on your own machine and never redistribute it (no
 # repository, no AUR binary, no release, no sharing).
@@ -63,8 +64,9 @@ makedepends=(
 provides=("nvidia-optical-flow-sdk=$pkgver")
 # Keep the SDK byte-identical.
 options=('!strip' '!debug' 'staticlibs')
-# This repository's working tree; resolved at build time. Nothing is
-# downloaded: the SDK comes from $NVIDIA_OF_SRC.
+# Nothing of NVIDIA's is downloaded: the SDK comes from $NVIDIA_OF_SRC.
+# The recipe's helpers (its scripts, the shim's source, the documents it
+# installs): this repository's working tree, resolved at build time.
 _repo=$(realpath -- "$startdir/..")
 source=()
 
@@ -81,7 +83,7 @@ prepare() {
   rm -rf -- "$srcdir/of" "$srcdir/of-zip" "$srcdir/of.state"
   # of.state records the packaged components for package(); it stays
   # outside the packaged tree.
-  bash "$_repo/nvidia-optical-flow/assemble.sh" --src "$nvidia_of_src" --dest "$srcdir/of" \
+  bash "$_repo/nvidia-optical-flow/assemble.sh" --conf "$startdir/selection.conf" --src "$nvidia_of_src" --dest "$srcdir/of" \
     --work "$srcdir/of-zip" --version "$pkgver" --sha256 "$nvidia_of_sha256" \
     --state "$srcdir/of.state"
 }

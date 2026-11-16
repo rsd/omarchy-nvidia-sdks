@@ -4,8 +4,8 @@
 # test, the fixture tests (assemble.sh, configure.sh and the selection.conf
 # parser, download.sh against a fake ngc, check-ngc.sh against a fake ngc
 # and curl, env.sh, the licence guard and its hooks, makepkg builds of the
-# PKGBUILDs against a fake SDK tree) and the licence guard over the whole
-# tree. Build output goes to mktemp, never into the working tree.
+# PKGBUILDs against a fake SDK tree, the AUR copies scripts/aur.sh makes)
+# and the licence guard over the whole tree. Build output goes to mktemp, never into the working tree.
 #
 # maxine-vfx is checked in full. The other packages (maxine-ar, the AR SDK;
 # maxine-afx, the Audio Effects SDK; nvidia-optical-flow, the Optical Flow
@@ -47,10 +47,12 @@ scripts=(
     .githooks/pre-commit
     .githooks/pre-merge-commit
     .githooks/pre-push
+    scripts/aur.sh
     scripts/check-ngc.sh
     scripts/check-no-nvidia.sh
     scripts/setup.sh
     scripts/test.sh
+    scripts/tests/aur-test.sh
     scripts/tests/check-ngc-test.sh
     scripts/tests/check-no-nvidia-test.sh
     scripts/tests/env-sh-test.sh
@@ -127,6 +129,7 @@ run_or_skip() {
     fi
 }
 run_or_skip "PKGBUILD fixture build" scripts/tests/pkgbuild-fixture-test.sh
+run_or_skip "AUR copies (scripts/aur.sh, a fixture build from a clone)" scripts/tests/aur-test.sh
 for pkg in "${extra_pkgs[@]}"; do
     [[ -f $pkg/tests/assemble-test.sh ]] && run "$pkg: assemble.sh fixture tests" "$pkg/tests/assemble-test.sh"
     [[ -f $pkg/tests/configure-test.sh ]] &&

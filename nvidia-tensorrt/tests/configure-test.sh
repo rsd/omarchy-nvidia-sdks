@@ -489,6 +489,25 @@ check "--show notes an environment override" says "note: NVIDIA_TRT_SRC is set i
 cp "$conf" "$tmp/conf.saved"
 run --src "$bad/$name" --write
 check "a failed --write keeps the previous selection.conf" cmp -s "$conf" "$tmp/conf.saved"
+# --conf: another file (an AUR clone's, next to its PKGBUILD).
+mkdir -p "$tmp/clone"
+run --src "$dl" --conf "$tmp/clone/selection.conf" --write
+check "--conf --write saves into that file" \
+    test "$(grep -v '^#' "$tmp/clone/selection.conf")" = "NVIDIA_TRT_SRC=$archive"$'\n'"NVIDIA_TRT_SHA256=$sum"
+check "and leaves the one next to configure.sh as it was" cmp -s "$conf" "$tmp/conf.saved"
+check "the next step builds in that directory" says "Next: (cd $tmp/clone && makepkg -f)"
+run --conf "$tmp/clone/selection.conf" --show
+check "--conf --show reads that file" says "NVIDIA_TRT_SRC=$archive"
+# --conf naming a directory, or ending in . or .., is refused; --write leaves
+# nothing behind (no file in the directory, no stray temporary file).
+mkdir -p "$tmp/confdir"
+for c in "$tmp/confdir" "$tmp/confdir/." "$tmp/confdir/.."; do
+    run --src "$dl" --conf "$c" --write
+    check "--conf $c --write is refused" fails_with "is a directory, not a file name"
+    check "and leaves no file in the directory" test -z "$(find "$tmp/confdir" -mindepth 1 -print -quit)"
+    check "and no temporary file next to it" test -z "$(find "$tmp" -maxdepth 1 -name '.selection.conf.*' -print -quit)"
+done
+rmdir "$tmp/confdir"
 
 echo "== selection.conf parsing"
 pwned=$tmp/pwned

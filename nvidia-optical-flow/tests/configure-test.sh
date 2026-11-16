@@ -346,6 +346,37 @@ rm -f "$conf"
 run --show
 check "--show without selection.conf says so" says "no selection.conf"
 
+echo "== --conf (an AUR clone's selection.conf)"
+clone=$tmp/clone
+mkdir -p "$clone"
+run --src "$zip" --conf "$clone/selection.conf" --write
+check "--conf --write succeeds" passes
+check "it writes that file" test "$(grep -v '^#' "$clone/selection.conf")" = "NVIDIA_OF_SRC=$zip"$'\n'"SHA256=$zsum"
+check "and not the one next to configure.sh" test ! -e "$conf"
+check "no temporary file is left there" test -z "$(find "$clone" -name '.selection.conf.*' -print -quit)"
+check "the next step builds in that directory" says "Next: (cd $clone && makepkg -f)"
+out=$(cd "$clone" && env -u NVIDIA_OF_SRC -u NVIDIA_OF_SHA256 HOME="$tmp/home" "$cfg" --conf selection.conf --show 2>&1)
+check "a relative --conf is the current directory's" grep -qxF "   NVIDIA_OF_SRC=$zip" <<<"$out"
+run --conf "$clone/selection.conf"
+check "the report reads that selection" says "from          $clone/selection.conf"
+check "the save command repeats --conf" says "--src $zip --write --conf $clone/selection.conf"
+rm -f "$clone/selection.conf"
+run --conf "$clone/selection.conf"
+check "the default source is that file's directory, as the PKGBUILD's" \
+    fails_with "cannot use $clone (from the default (the directory of $clone/selection.conf)"
+run --src "$zip" --conf "$tmp/nonexistent/selection.conf" --write
+check "a --conf in a missing directory is refused" fails_with "not a file name in an existing directory"
+# --conf naming a directory, or ending in . or .., is refused; --write leaves
+# nothing behind (no file in the directory, no stray temporary file).
+mkdir -p "$tmp/confdir"
+for c in "$tmp/confdir" "$tmp/confdir/." "$tmp/confdir/.."; do
+    run --src "$zip" --conf "$c" --write
+    check "--conf $c --write is refused" fails_with "is a directory, not a file name"
+    check "and leaves no file in the directory" test -z "$(find "$tmp/confdir" -mindepth 1 -print -quit)"
+    check "and no temporary file next to it" test -z "$(find "$tmp" -maxdepth 1 -name '.selection.conf.*' -print -quit)"
+done
+rmdir "$tmp/confdir"
+
 echo "== selection.sh"
 # The parser runs in its own bash, from the copied selection.sh.
 # shellcheck disable=SC2016 # the scripts for bash -c expand their own arguments

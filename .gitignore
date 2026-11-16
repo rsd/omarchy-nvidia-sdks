@@ -133,3 +133,7 @@ nvidia-tensorrt/.selection.conf.*
 # NGC CLI configuration (holds the API key) and download logs.
 .ngc/
 *.log
+
+# The AUR repositories, one clone per package (scripts/aur.sh --aur writes
+# their files; docs/aur.md).
+/aur/

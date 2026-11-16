@@ -215,6 +215,16 @@ cp "$conf" "$tmp/saved.conf"
 run --src "$weird" --archs sm_120 --features all --write
 check "a path that selection.conf cannot hold is refused" fails_with "cannot be stored in selection.conf"
 check "the file is unchanged" cmp -s "$conf" "$tmp/saved.conf"
+# --conf naming a directory, or ending in . or .., is refused; --write leaves
+# nothing behind (no file in the directory, no stray temporary file).
+mkdir -p "$tmp/confdir"
+for c in "$tmp/confdir" "$tmp/confdir/." "$tmp/confdir/.."; do
+    run --src "$dl" --archs sm_86 --features denoiser --conf "$c" --write
+    check "--conf $c --write is refused" fails_with "is a directory, not a file name"
+    check "and leaves no file in the directory" test -z "$(find "$tmp/confdir" -mindepth 1 -print -quit)"
+    check "and no temporary file next to it" test -z "$(find "$tmp" -maxdepth 1 -name '.selection.conf.*' -print -quit)"
+done
+rmdir "$tmp/confdir"
 core=$tmp/core
 fake "$core/NVIDIA_AFX_SDK_Linux_3.0.0.12.tar.gz"
 run --src "$core" --archs sm_120 --features all --write

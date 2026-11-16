@@ -1,12 +1,13 @@
-# Maintainer: Raul Dias
+# Maintainer: Raul Dias <raul@dias.com.br>
 #
 # A local Arch package of the NVIDIA Maxine Audio Effects SDK, built from the
 # user's OWN download, so that several projects on one machine share one
 # installation. For personal use: each user accepts NVIDIA's licence and
-# downloads the SDK from NGC themselves (README.md). This repository holds
-# only the recipe. The built package contains NVIDIA software: keep it on
-# your own machine and never redistribute it (no repository, no AUR binary,
-# no release, no sharing).
+# downloads the SDK from NGC themselves, as described in
+# https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md
+# This repository holds only the recipe. The built package contains NVIDIA
+# software: keep it on your own machine and never redistribute it (no
+# repository, no AUR binary, no release, no sharing; NVIDIA SLA 8.5).
 #
 # The package is built from this working tree (the directory above), not
 # from a git clone, so nothing has to be committed to build it.
@@ -45,9 +46,9 @@
 # (a compatibility shim for distributions the SDK does not list; NVIDIA does
 # not support this configuration) under /usr/lib/maxine-afx, and an
 # environment file, /usr/share/maxine-afx/maxine-afx.env, that a consumer
-# loads explicitly (docs/usage.md). Nothing under /etc and nothing global:
-# the bundled CUDA 12 and TensorRT 10 libraries would otherwise shadow the
-# system's for every program.
+# loads explicitly (/usr/share/doc/maxine-afx-sdk-local/usage.md). Nothing
+# under /etc and nothing global: the bundled CUDA 12 and TensorRT 10
+# libraries would otherwise shadow the system's for every program.
 #
 # shellcheck source-path=SCRIPTDIR
 
@@ -68,8 +69,9 @@ checkdepends=(
 provides=("maxine-afx-sdk=$pkgver")
 # Keep the SDK byte-identical.
 options=('!strip' '!debug' 'staticlibs')
-# This repository's working tree; resolved at build time. Nothing is
-# downloaded: the SDK comes from $MAXINE_AFX_SRC.
+# Nothing of NVIDIA's is downloaded: the SDK comes from $MAXINE_AFX_SRC.
+# The recipe's helpers (its scripts, the shim's source, the documents it
+# installs): this repository's working tree, resolved at build time.
 _repo=$(realpath -- "$startdir/..")
 source=()
 
@@ -96,7 +98,7 @@ prepare() {
   rm -rf -- "$srcdir/afx" "$srcdir/afx.state"
   # afx.state records the packaged features, architectures and sample rates
   # for package(); it stays outside the packaged tree.
-  bash "$_repo/maxine-afx/assemble.sh" --src "$maxine_afx_src" --dest "$srcdir/afx" \
+  bash "$_repo/maxine-afx/assemble.sh" --conf "$startdir/selection.conf" --src "$maxine_afx_src" --dest "$srcdir/afx" \
     --version "$pkgver" --archs "${_archs[*]}" --features "${_features[*]}" \
     --state "$srcdir/afx.state"
 }

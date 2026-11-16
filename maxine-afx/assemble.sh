@@ -4,7 +4,7 @@
 # from the download is executed, and the source is never modified.
 #
 #   assemble.sh --src DIR --dest DIR --version 3.0.0.12 \
-#       [--archs "sm_120 sm_89" | --archs all] [--features all | "f1 f2"] [--state FILE]
+#       [--archs "sm_120 sm_89" | --archs all] [--features all | "f1 f2"] [--state FILE] [--conf FILE]
 #   assemble.sh --scan --src DIR --version 3.0.0.12
 #
 # The version is the SDK's full four-part version (version.h); NGC tags its
@@ -96,6 +96,9 @@
 #   archs=<every architecture with models, or ->
 #   rates=<every sample rate with models, or ->
 # No feature present is not an error for --scan (no feature= line).
+#
+# --conf FILE (not with --scan) is the selection.conf the build reads; it
+# is only named in the advice printed when the source is unusable.
 set -euo pipefail
 
 prog=${0##*/}
@@ -107,19 +110,19 @@ warn() { printf '%s: WARNING: %s\n' "$prog" "$*" >&2; }
 note() { printf '%s: note: %s\n' "$prog" "$*" >&2; }
 usage() {
     echo "usage: $prog --src DIR --dest DIR --version X.Y.Z.W" \
-        "[--archs \"sm_120 sm_89\" | all] [--features all | \"f1 f2\"] [--state FILE]" >&2
+        "[--archs \"sm_120 sm_89\" | all] [--features all | \"f1 f2\"] [--state FILE] [--conf FILE]" >&2
     echo "       $prog --scan --src DIR --version X.Y.Z.W" >&2
     exit 2
 }
 
-src='' dest='' version='' archs_arg=sm_120 features_arg=all state='' scan=0
+src='' dest='' version='' archs_arg=sm_120 features_arg=all state='' scan=0 conf=''
 while (($#)); do
     case $1 in
         --scan)
             scan=1
             shift
             ;;
-        --src | --dest | --version | --archs | --features | --state)
+        --src | --dest | --version | --archs | --features | --state | --conf)
             (($# >= 2)) || usage
             case $1 in
                 --src) src=$2 ;;
@@ -128,6 +131,7 @@ while (($#)); do
                 --archs) archs_arg=$2 ;;
                 --features) features_arg=$2 ;;
                 --state) state=$2 ;;
+                --conf) conf=$2 ;;
             esac
             shift 2
             ;;
@@ -135,16 +139,23 @@ while (($#)); do
     esac
 done
 if ((scan)); then
-    [[ -n $src && -n $version && -z $dest && -z $state ]] || usage
+    [[ -n $src && -n $version && -z $dest && -z $state && -z $conf ]] || usage
 else
     [[ -n $src && -n $dest && -n $version ]] || usage
 fi
 
+
+# The configure.sh command the advice names: the one next to this script,
+# with --conf when the build reads a selection.conf elsewhere (an AUR
+# clone's, next to its PKGBUILD).
+here=$(cd "$(dirname "$0")" && pwd)
+cfg_cmd=$(printf '%q' "$here/configure.sh")
+[[ -z $conf || $conf == "$here/selection.conf" ]] || cfg_cmd+=" --conf $(printf '%q' "$conf")"
 [[ $version =~ ^(([0-9]+)\.([0-9]+)\.[0-9]+)\.[0-9]+$ ]] ||
     die "--version must look like 3.0.0.12, got '$version'"
 ngc_ver=${BASH_REMATCH[1]}
 major_minor=${BASH_REMATCH[2]}.${BASH_REMATCH[3]}
-see="See maxine-afx/README.md."
+see="See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/maxine-afx/README.md."
 
 # Lists split on spaces or commas; duplicates are dropped, order is kept.
 split_list() {
@@ -267,7 +278,12 @@ fi
 if [[ -z $tree && -z $core_tgz ]]; then
     die "no Maxine AFX SDK found in $src. Looked for an SDK tree" \
         "($src/nvafx/lib/libnv_audiofx.so or $src/Audio_Effects_SDK/nvafx/lib/libnv_audiofx.so)" \
-        "and for the core download ($src/$core_name or $src/$core_dir/$core_name). $see"
+        "and for the core download ($src/$core_name or $src/$core_dir/$core_name)." \
+        "Download the SDK from NVIDIA NGC yourself (an NVIDIA account with Maxine" \
+        "access and an NGC API key:" \
+        "https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/resources/maxine_linux_audio_effects_sdk)" \
+        "and point MAXINE_AFX_SRC at the directory that holds it, or save it with" \
+        "$cfg_cmd --src <that directory> --write. $see"
 fi
 
 # check_links <root>: refuses a symbolic link to a directory, to an existing

@@ -6,7 +6,7 @@
 #
 #   assemble.sh --scan --src PATH --version 5.0.7
 #   assemble.sh --src PATH --dest DIR --work DIR --version 5.0.7 \
-#       [--sha256 HEX] [--state FILE]
+#       [--sha256 HEX] [--state FILE] [--conf FILE]
 #
 # PATH is one of:
 #   - the SDK zip as NVIDIA's download page serves it
@@ -86,6 +86,9 @@
 # A symbolic link in DEST whose target is absolute or leaves DEST, and a
 # device, fifo or socket in DEST, stop the build. --state FILE records FEATURES=<comma list> and FRUC_LIB=<name> for
 # package().
+#
+# --conf FILE (not with --scan) is the selection.conf the build reads; it
+# is only named in the advice printed when the source is unusable.
 set -euo pipefail
 
 prog=${0##*/}
@@ -97,16 +100,16 @@ warn() { printf '%s: WARNING: %s\n' "$prog" "$*" >&2; }
 usage() {
     cat >&2 <<EOF
 usage: $prog --scan --src PATH --version X.Y.Z
-       $prog --src PATH --dest DIR --work DIR --version X.Y.Z [--sha256 HEX] [--state FILE]
+       $prog --src PATH --dest DIR --work DIR --version X.Y.Z [--sha256 HEX] [--state FILE] [--conf FILE]
 EOF
     exit 2
 }
 
-scan=0 src='' dest='' work='' version='' sha256_arg='' state=''
+scan=0 src='' dest='' work='' version='' sha256_arg='' state='' conf=''
 while (($#)); do
     case $1 in
         --scan) scan=1 && shift ;;
-        --src | --dest | --work | --version | --sha256 | --state)
+        --src | --dest | --work | --version | --sha256 | --state | --conf)
             (($# >= 2)) || usage
             case $1 in
                 --src) src=$2 ;;
@@ -115,6 +118,7 @@ while (($#)); do
                 --version) version=$2 ;;
                 --sha256) sha256_arg=$2 ;;
                 --state) state=$2 ;;
+                --conf) conf=$2 ;;
             esac
             shift 2
             ;;
@@ -123,10 +127,17 @@ while (($#)); do
 done
 [[ -n $src && -n $version ]] || usage
 if ((scan)); then
-    [[ -z $dest$work$state$sha256_arg ]] || usage
+    [[ -z $dest$work$state$sha256_arg$conf ]] || usage
 else
     [[ -n $dest && -n $work ]] || usage
 fi
+
+# The configure.sh command the advice names: the one next to this script,
+# with --conf when the build reads a selection.conf elsewhere (an AUR
+# clone's, next to its PKGBUILD).
+here=$(cd "$(dirname "$0")" && pwd)
+cfg_cmd=$(printf '%q' "$here/configure.sh")
+[[ -z $conf || $conf == "$here/selection.conf" ]] || cfg_cmd+=" --conf $(printf '%q' "$conf")"
 [[ $version =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || die "invalid --version '$version'"
 [[ -z $sha256_arg || $sha256_arg =~ ^[0-9a-fA-F]{64}$ ]] || die "--sha256 must be 64 hexadecimal digits"
 sha256_arg=${sha256_arg,,}
@@ -296,7 +307,11 @@ done
 where=$src
 [[ $layout == zip ]] && where=$zip
 if ((${#api_dirs[@]} == 0)); then
-    die "no Optical Flow API headers in $where: nvOpticalFlowCommon.h and nvOpticalFlowCuda.h were not found side by side (is this the Optical Flow SDK?)"
+    die "no Optical Flow API headers in $where: nvOpticalFlowCommon.h and nvOpticalFlowCuda.h" \
+        "were not found side by side (is this the Optical Flow SDK?). Download the SDK zip" \
+        "yourself (a free NVIDIA Developer Program login, and the DesignWorks SDK licence):" \
+        "https://developer.nvidia.com/opticalflow/download, and point NVIDIA_OF_SRC at it, or" \
+        "save it with $cfg_cmd --src <the zip> --write. See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/optical-flow.md"
 fi
 if ((${#named[@]} == 1)); then
     api=${named[0]}
@@ -471,10 +486,10 @@ fi
 
 if [[ $layout == zip ]]; then
     if [[ -z $sha256_arg ]]; then
-        die "no checksum is recorded for $zip: NVIDIA publishes none, so it is recorded when you select the zip. Run: configure.sh --src $(printf %q "$zip") --write (or set NVIDIA_OF_SHA256 to its SHA-256)"
+        die "no checksum is recorded for $zip: NVIDIA publishes none, so it is recorded when you select the zip. Run: $cfg_cmd --src $(printf %q "$zip") --write (or build with NVIDIA_OF_SHA256=$sha256 in the environment, the SHA-256 of this file)"
     fi
     if [[ $sha256 != "$sha256_arg" ]]; then
-        die "checksum mismatch for $zip: SHA-256 $sha256, but $sha256_arg was recorded. The file changed since it was selected (an interrupted or different download): download it again, or, if you replaced it on purpose, record the new one with configure.sh --src $(printf %q "$zip") --write"
+        die "checksum mismatch for $zip: SHA-256 $sha256, but $sha256_arg was recorded. The file changed since it was selected (an interrupted or different download): download it again, or, if you replaced it on purpose, record the new one with $cfg_cmd --src $(printf %q "$zip") --write (or set NVIDIA_OF_SHA256=$sha256 in the environment)"
     fi
     echo "checksum  SHA-256 of ${zip##*/} verified ($sha256)"
     bsdtar -xf "$zip_read" -C "$work/tree" || die "extracting $zip failed"

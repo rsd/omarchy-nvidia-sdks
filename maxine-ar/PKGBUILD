@@ -1,12 +1,13 @@
-# Maintainer: Raul Dias
+# Maintainer: Raul Dias <raul@dias.com.br>
 #
 # A local Arch package of the NVIDIA Maxine AR SDK, built from the
 # user's OWN download, so that several projects on one machine share one
 # installation. For personal use: each user accepts NVIDIA's licence and
-# downloads the SDK from NGC themselves (docs/download.md). This repository
-# holds only the recipe. The built package contains NVIDIA software: keep it
-# on your own machine and never redistribute it (no repository, no AUR
-# binary, no release, no sharing; NVIDIA SLA 8.5).
+# downloads the SDK from NGC themselves, as described in
+# https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md
+# This repository holds only the recipe. The built package contains NVIDIA
+# software: keep it on your own machine and never redistribute it (no
+# repository, no AUR binary, no release, no sharing; NVIDIA SLA 8.5).
 #
 # The package is built from this working tree (the directory above), not
 # from a git clone, so nothing has to be committed to build it.
@@ -24,7 +25,8 @@
 #                       dot), space- or comma-separated, or `all` alone for
 #                       every architecture in the source (default:
 #                       _maxine_archs below). Each one adds the models of
-#                       every feature that has models (README.md).
+#                       every feature that has models (the recipe's README.md,
+#                       https://github.com/rsd/omarchy-nvidia-sdks/blob/main/maxine-ar/README.md).
 #   MAXINE_AR_FEATURES  `all` (default: every feature present is packaged),
 #                       or a space- or comma-separated list: exactly those
 #                       are packaged, and each must be present.
@@ -45,9 +47,9 @@
 # shim (a compatibility shim for distributions the SDK does not list; NVIDIA
 # does not support this configuration) under /usr/lib/maxine-ar, and an
 # environment file, /usr/share/maxine-ar/maxine-ar.env, that a consumer
-# loads explicitly (docs/usage.md). Nothing under /etc and nothing global:
-# the bundled CUDA 12 and TensorRT 10 libraries would otherwise shadow the
-# system's for every program.
+# loads explicitly (/usr/share/doc/maxine-ar-sdk-local/usage.md). Nothing
+# under /etc and nothing global: the bundled CUDA 12 and TensorRT 10
+# libraries would otherwise shadow the system's for every program.
 #
 # shellcheck source-path=SCRIPTDIR
 
@@ -68,8 +70,9 @@ checkdepends=(
 provides=("maxine-ar-sdk=$pkgver")
 # Keep the SDK byte-identical, including its bundled static libraries.
 options=('!strip' '!debug' 'staticlibs')
-# This repository's working tree; resolved at build time. Nothing is
-# downloaded: the SDK comes from $MAXINE_AR_SRC.
+# Nothing of NVIDIA's is downloaded: the SDK comes from $MAXINE_AR_SRC.
+# The recipe's helpers (its scripts, the shim's source, the documents it
+# installs): this repository's working tree, resolved at build time.
 _repo=$(realpath -- "$startdir/..")
 source=()
 
@@ -97,7 +100,7 @@ prepare() {
   rm -rf -- "$srcdir/arsdk" "$srcdir/arsdk.state"
   # arsdk.state records the packaged features and architectures for
   # package(); it stays outside the packaged tree.
-  bash "$_repo/maxine-ar/assemble.sh" --src "$maxine_ar_src" --dest "$srcdir/arsdk" \
+  bash "$_repo/maxine-ar/assemble.sh" --conf "$startdir/selection.conf" --src "$maxine_ar_src" --dest "$srcdir/arsdk" \
     --version "$pkgver" --archs "${_archs[*]}" --features "${_features[*]}" \
     --state "$srcdir/arsdk.state"
 }

@@ -4,7 +4,7 @@
 # source is never modified.
 #
 #   assemble.sh --src DIR --dest DIR --version 1.3.0.0 \
-#       [--archs "sm_120 sm_89" | --archs all] [--features all | "f1 f2"] [--state FILE]
+#       [--archs "sm_120 sm_89" | --archs all] [--features all | "f1 f2"] [--state FILE] [--conf FILE]
 #   assemble.sh --scan --src DIR --version 1.3.0.0
 #
 # Two source layouts are accepted (docs/download.md):
@@ -73,6 +73,9 @@
 #   archs=<comma-separated sm_N list of every model present, or ->
 #   models_unknown=<model files whose name carries no architecture>
 # No feature present is not an error for --scan (no feature= line).
+#
+# --conf FILE (not with --scan) is the selection.conf the build reads; it
+# is only named in the advice printed when the source is unusable.
 set -euo pipefail
 
 prog=${0##*/}
@@ -84,19 +87,19 @@ warn() { printf '%s: WARNING: %s\n' "$prog" "$*" >&2; }
 note() { printf '%s: note: %s\n' "$prog" "$*" >&2; }
 usage() {
     echo "usage: $prog --src DIR --dest DIR --version X.Y.Z.W" \
-        "[--archs \"sm_120 sm_89\" | all] [--features all | \"f1 f2\"] [--state FILE]" >&2
+        "[--archs \"sm_120 sm_89\" | all] [--features all | \"f1 f2\"] [--state FILE] [--conf FILE]" >&2
     echo "       $prog --scan --src DIR --version X.Y.Z.W" >&2
     exit 2
 }
 
-src='' dest='' version='' archs_arg=sm_120 features_arg=all state='' scan=0
+src='' dest='' version='' archs_arg=sm_120 features_arg=all state='' scan=0 conf=''
 while (($#)); do
     case $1 in
         --scan)
             scan=1
             shift
             ;;
-        --src | --dest | --version | --archs | --features | --state)
+        --src | --dest | --version | --archs | --features | --state | --conf)
             (($# >= 2)) || usage
             case $1 in
                 --src) src=$2 ;;
@@ -105,6 +108,7 @@ while (($#)); do
                 --archs) archs_arg=$2 ;;
                 --features) features_arg=$2 ;;
                 --state) state=$2 ;;
+                --conf) conf=$2 ;;
             esac
             shift 2
             ;;
@@ -113,11 +117,18 @@ while (($#)); do
     esac
 done
 if ((scan)); then
-    [[ -n $src && -n $version && -z $dest && -z $state ]] || usage
+    [[ -n $src && -n $version && -z $dest && -z $state && -z $conf ]] || usage
 else
     [[ -n $src && -n $dest && -n $version ]] || usage
 fi
 
+
+# The configure.sh command the advice names: the one next to this script,
+# with --conf when the build reads a selection.conf elsewhere (an AUR
+# clone's, next to its PKGBUILD).
+here=$(cd "$(dirname "$0")" && pwd)
+cfg_cmd=$(printf '%q' "$here/configure.sh")
+[[ -z $conf || $conf == "$here/selection.conf" ]] || cfg_cmd+=" --conf $(printf '%q' "$conf")"
 [[ $version =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] ||
     die "--version must look like 1.3.0.0, got '$version'"
 major_minor=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}
@@ -245,7 +256,11 @@ if [[ -z $tree && -z $core_tgz ]]; then
         "($src/lib/libVideoFX.so or $src/VideoFX/lib/libVideoFX.so) and for the" \
         "core download ($src/VFXSDK_linux_$version.tgz or" \
         "$src/vfx_sdk_core_v${version}_linux/VFXSDK_linux_$version.tgz)." \
-        "See docs/download.md."
+        "Download the SDK from NVIDIA NGC yourself (an NVIDIA account with Maxine" \
+        "access and an NGC API key: https://catalog.ngc.nvidia.com/orgs/nvidia/maxine/resources/vfx_sdk_core)" \
+        "and point MAXINE_VFX_SRC at the directory that holds it, or save it with" \
+        "$cfg_cmd --src <that directory> --write." \
+        "See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
 fi
 
 # check_links <root>: refuses a symbolic link to a directory, to an existing
@@ -323,7 +338,7 @@ select_features() {
             die "feature(s) not present in the SDK tree $tree: ${missing[*]} (no" \
                 "features/<feature>/lib/*.so; present: ${present[*]:-none}). An SDK tree is used" \
                 "as it is: to add a feature, build from an NGC download instead (NGC:" \
-                "nvidia/maxine/${missing[0]}:${version}_lib_linux). See docs/download.md."
+                "nvidia/maxine/${missing[0]}:${version}_lib_linux). See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
         fi
         local fetch=''
         for f in "${missing[@]}"; do
@@ -331,7 +346,7 @@ select_features() {
         done
         die "feature(s) not present in $src: ${missing[*]} (present: ${present[*]:-none})." \
             "Fetch with your own NGC CLI:${fetch} plus its models for each architecture," \
-            "nvidia/maxine/<feature>:${version}_models_linux_sm<N>, if it has any. See docs/download.md."
+            "nvidia/maxine/<feature>:${version}_models_linux_sm<N>, if it has any. See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
     fi
     mapfile -t selected < <(sort_names "${wanted[@]}")
     for f in "${present[@]}"; do
@@ -448,7 +463,7 @@ else
             die "$base does not match SDK version $major_minor (feature MAJOR.MINOR must equal the SDK's)"
         [[ -n ${lib_dir[$f]:-} ]] ||
             die "$base has no library download: no ${f}_v${major_minor}.*_lib_linux/ in $src" \
-                "(NGC: nvidia/maxine/$f:${version}_lib_linux). See docs/download.md."
+                "(NGC: nvidia/maxine/$f:${version}_lib_linux). See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
         [[ -z ${model_dir[$f:$n]:-} ]] ||
             die "more than one download of $f (models_linux_sm$n) in $src: ${model_dir[$f:$n]##*/} $base"
         model_dir[$f:$n]=$dir
@@ -469,7 +484,7 @@ else
                 dir=${model_dir[$key]}
                 [[ -n $(find "$dir" -mindepth 1 -maxdepth 1 -type f -print -quit) ]] ||
                     warn "models directory ${dir##*/} holds no model file directly inside:" \
-                        "the build refuses it when sm_$n is selected. See docs/download.md."
+                        "the build refuses it when sm_$n is selected. See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
             done
             printf 'feature=%s archs=%s\n' "$f" "$(comma_archs "${feature_sms[@]}")"
         done
@@ -478,7 +493,7 @@ else
     fi
     ((${#present[@]} > 0)) ||
         die "no feature found in $src: no nvvfx*_v${major_minor}.*_lib_linux/ directory" \
-            "(e.g. NGC: nvidia/maxine/nvvfxgreenscreen:${version}_lib_linux). See docs/download.md."
+            "(e.g. NGC: nvidia/maxine/nvvfxgreenscreen:${version}_lib_linux). See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
     select_features
     lib_features=("${selected[@]}")
     # The architectures with models, among the selected features.
@@ -497,7 +512,7 @@ else
             for n in "${sms[@]}"; do
                 [[ -n ${model_dir[$f:$n]:-} ]] ||
                     die "feature $f has no models for sm_$n: no ${f}_v${major_minor}.*_models_linux_sm$n/" \
-                        "in $src (NGC: nvidia/maxine/$f:${feat_ver[$f]}_models_linux_sm$n). See docs/download.md."
+                        "in $src (NGC: nvidia/maxine/$f:${feat_ver[$f]}_models_linux_sm$n). See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
             done
         done
     fi
@@ -511,14 +526,14 @@ else
             [[ -n $dir ]] || continue
             [[ -z $(find "$dir" -mindepth 1 -maxdepth 1 -type d -print -quit) ]] ||
                 die "models directory ${dir##*/} contains subdirectories; expected the model files" \
-                    "directly inside (as ngc download-version creates it). See docs/download.md."
+                    "directly inside (as ngc download-version creates it). See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
             other=$(find "$dir" -mindepth 1 -maxdepth 1 ! -type f -printf '%f\n' -quit)
             [[ -z $other ]] ||
                 die "models directory ${dir##*/} holds $other, which is not a regular file;" \
                     "expected only the model files"
             [[ -n $(find "$dir" -mindepth 1 -maxdepth 1 -type f -print -quit) ]] ||
                 die "models directory ${dir##*/} is empty: download it again" \
-                    "(NGC: nvidia/maxine/$f:${feat_ver[$f]}_models_linux_sm$n). See docs/download.md."
+                    "(NGC: nvidia/maxine/$f:${feat_ver[$f]}_models_linux_sm$n). See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
             while IFS= read -r -d '' file; do
                 name=${file##*/}
                 first=${model_origin[$name]:-}
@@ -606,11 +621,11 @@ done
 mapfile -t left_out < <(sort_names "${left_out[@]}")
 ((${#features[@]} > 0)) ||
     die "no feature in the assembled tree (no features/<feature>/lib/*.so): download at least one" \
-        "(e.g. NGC: nvidia/maxine/nvvfxgreenscreen:${version}_lib_linux). See docs/download.md."
+        "(e.g. NGC: nvidia/maxine/nvvfxgreenscreen:${version}_lib_linux). See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
 for f in "${wanted[@]}"; do
     in_list "$f" "${features[@]}" ||
         die "selected feature $f is not in the assembled tree (no features/$f/lib/*.so; NGC:" \
-            "nvidia/maxine/$f:${version}_lib_linux). See docs/download.md."
+            "nvidia/maxine/$f:${version}_lib_linux). See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
 done
 
 # A feature's <Name>_dependencies.txt may name other features it needs. Its
@@ -631,7 +646,7 @@ for f in "${features[@]}"; do
         done < <(tr -s '[:space:]' '\n' <"$deps")
         ((${#missing[@]} == 0)) ||
             warn "feature $f lists dependencies that are not present: ${missing[*]}" \
-                "(features/$f/${deps##*/}). See docs/download.md."
+                "(features/$f/${deps##*/}). See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
         ((${#unselected[@]} == 0)) ||
             warn "feature $f lists dependencies that are present but not selected: ${unselected[*]}" \
                 "(features/$f/${deps##*/}); add them to MAXINE_VFX_FEATURES (--features)."
@@ -648,7 +663,7 @@ fi
 if ((${#source_sms[@]} == 0)); then
     if ((source_models == 0)); then
         warn "no models in the source: only features without models (such as background blur)" \
-            "will work. See docs/download.md."
+            "will work. See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
     else
         warn "no model file name carries a GPU architecture: nothing was pruned"
     fi
@@ -659,7 +674,7 @@ else
         [[ -n ${arch_files[$n]:-} ]] ||
             die "no models for sm_$n in lib/models; the source has models for ${have}(NGC:" \
                 "nvidia/maxine/<feature>:${version}_models_linux_sm$n for every feature with" \
-                "models). See docs/download.md."
+                "models). See https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md."
     done
 fi
 if ((${#unknown_models[@]} > 0)); then

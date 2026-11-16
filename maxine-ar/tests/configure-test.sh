@@ -243,6 +243,16 @@ run --src "$weird" --archs sm_120 --features all --write
 check "a path that selection.conf cannot hold is refused" fails_with "cannot be stored in selection.conf"
 check "the file is unchanged" cmp -s "$conf" "$tmp/saved.conf"
 check "no temporary file is left" no_temp_left
+# --conf naming a directory, or ending in . or .., is refused; --write leaves
+# nothing behind (no file in the directory, no stray temporary file).
+mkdir -p "$tmp/confdir"
+for c in "$tmp/confdir" "$tmp/confdir/." "$tmp/confdir/.."; do
+    run --src "$dl" --archs sm_86 --conf "$c" --write
+    check "--conf $c --write is refused" fails_with "is a directory, not a file name"
+    check "and leaves no file in the directory" test -z "$(find "$tmp/confdir" -mindepth 1 -print -quit)"
+    check "and no temporary file next to it" test -z "$(find "$tmp" -maxdepth 1 -name '.selection.conf.*' -print -quit)"
+done
+rmdir "$tmp/confdir"
 
 nomodels=$tmp/nomodels
 fake "$nomodels/ARSDK_linux_1.2.0.0.tgz" "$nomodels/nvarfaceboxdetection_v1.2.0.0_lib_linux/b.tar.gz"

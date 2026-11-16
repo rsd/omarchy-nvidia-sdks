@@ -40,6 +40,12 @@
 # with NVIDIA_TRT_SRC=<source> and, for an archive, NVIDIA_TRT_SHA256. See
 # selection.sh for the file's format and the PKGBUILD for the precedence
 # (environment variable > selection.conf > default).
+#
+# --conf FILE reads and writes FILE instead of the selection.conf next to
+# this script. The build reads selection.conf next to the PKGBUILD it runs:
+# from an AUR clone, where this script is under src/, give
+# --conf <the clone>/selection.conf. That directory is also where the
+# printed `makepkg` commands run.
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
@@ -56,16 +62,21 @@ die() {
     exit 1
 }
 usage() {
-    printf 'usage: %s [--src PATH] [--write]\n       %s --show\n' "$prog" "$prog" >&2
+    printf 'usage: %s [--src PATH] [--conf FILE] [--write]\n       %s [--conf FILE] --show\n' "$prog" "$prog" >&2
     exit 2
 }
 
-src_arg='' write=0 show=0
+src_arg='' conf_arg='' write=0 show=0
 while (($#)); do
     case $1 in
         --src)
             (($# >= 2)) || usage
             src_arg=$2
+            shift 2
+            ;;
+        --conf)
+            (($# >= 2)) || usage
+            conf_arg=$2
             shift 2
             ;;
         --write) write=1 && shift ;;
@@ -77,6 +88,19 @@ if ((show)) && { ((write)) || [[ -n $src_arg ]]; }; then
     usage
 fi
 q() { printf '%q' "$1"; } # a path as a shell word, for the printed commands
+
+# The selection.conf read and written: --conf, else the one next to this
+# script; builddir is the directory it is in (the PKGBUILD's, for the build).
+if [[ -n $conf_arg ]]; then
+    [[ $conf_arg != *$'\n'* && $conf_arg != */ && -d $(dirname -- "$conf_arg") ]] ||
+        die "--conf $(q "$conf_arg"): not a file name in an existing directory"
+    [[ ! -d $conf_arg && ${conf_arg##*/} != . && ${conf_arg##*/} != .. ]] ||
+        die "--conf $(q "$conf_arg"): is a directory, not a file name"
+    conf=$(cd -- "$(dirname -- "$conf_arg")" && pwd)/${conf_arg##*/}
+fi
+builddir=${conf%/*}
+conf_opt='' # repeated in the printed commands when not the default
+[[ $conf == "$here/selection.conf" ]] || conf_opt=" --conf $(q "$conf")"
 
 # What this directory's PKGBUILD packages (its lines, read, not sourced).
 pkgbuild_value() { sed -n "s/^$1=\\([A-Za-z0-9._+-]*\\)\$/\\1/p" "$here/PKGBUILD"; }
@@ -95,7 +119,7 @@ trt_expected_archive=$pinned_archive trt_expected_version=$version trt_download_
 
 show_selection() {
     if ! nvidia_trt_read_selection "$conf"; then
-        echo "  $conf is not valid (see above); fix it or write it again with --write"
+        echo "  $conf is not valid (see above); fix it or write it again with --write$conf_opt"
         return 1
     fi
     if [[ ! -e $conf ]]; then
@@ -206,12 +230,12 @@ if ((!write)); then
     show_selection || true
     echo
     echo "Commands:"
-    echo "  save this source:  $(q "$0") --src $(q "$trt_path") --write"
-    echo "  build:             (cd $(q "$here") && makepkg -f)"
+    echo "  save this source:  $(q "$0") --src $(q "$trt_path") --write$conf_opt"
+    echo "  build:             (cd $(q "$builddir") && makepkg -f)"
     exit 0
 fi
 
-tmpfile=$(mktemp "$here/.selection.conf.XXXXXX")
+tmpfile=$(mktemp "$builddir/.selection.conf.XXXXXX")
 trap 'rm -f -- "$tmpfile"' EXIT
 {
     echo "# The nvidia-tensorrt build source, written by configure.sh. The PKGBUILD"
@@ -226,9 +250,9 @@ nvidia_trt_read_selection "$tmpfile" 2>/dev/null ||
     die "the path $trt_path cannot be stored in selection.conf (it holds \$, a backtick, a quote" \
         "or a control character): rename it, or set NVIDIA_TRT_SRC in the environment instead"
 chmod 644 -- "$tmpfile"
-mv -f -- "$tmpfile" "$conf"
+mv -fT -- "$tmpfile" "$conf"
 trap - EXIT
 echo
 echo "Wrote $conf:"
 grep -v '^#' "$conf" | sed 's/^/  /'
-echo "Next: (cd $(q "$here") && makepkg -f)"
+echo "Next: (cd $(q "$builddir") && makepkg -f)"

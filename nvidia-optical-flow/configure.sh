@@ -32,6 +32,12 @@
 # when a directory holding it was given) and, for a zip, SHA256: NVIDIA
 # publishes no checksum, so the one of your download is recorded and the
 # build verifies the zip against it. See selection.sh for the file's format.
+#
+# --conf FILE reads and writes FILE instead of the selection.conf next to
+# this script. The build reads selection.conf next to the PKGBUILD it runs:
+# from an AUR clone, where this script is under src/, give
+# --conf <the clone>/selection.conf. That directory is also where the
+# printed `makepkg` commands run.
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 
@@ -47,18 +53,23 @@ die() {
 }
 usage() {
     cat >&2 <<EOF
-usage: $prog [--src PATH] [--write]
-       $prog --show
+usage: $prog [--src PATH] [--conf FILE] [--write]
+       $prog [--conf FILE] --show
 EOF
     exit 2
 }
 
-src_arg='' write=0 show=0
+src_arg='' conf_arg='' write=0 show=0
 while (($#)); do
     case $1 in
         --src)
             (($# >= 2)) || usage
             src_arg=$2
+            shift 2
+            ;;
+        --conf)
+            (($# >= 2)) || usage
+            conf_arg=$2
             shift 2
             ;;
         --write) write=1 && shift ;;
@@ -77,28 +88,41 @@ version=$(sed -n 's/^pkgver=\([0-9][0-9.]*\)$/\1/p' "$here/PKGBUILD")
 
 q() { printf '%q' "$1"; } # a path as a shell word, for the printed commands
 
+# The selection.conf read and written: --conf, else the one next to this
+# script; builddir is the directory it is in (the PKGBUILD's, for the build).
+if [[ -n $conf_arg ]]; then
+    [[ $conf_arg != *$'\n'* && $conf_arg != */ && -d $(dirname -- "$conf_arg") ]] ||
+        die "--conf $(q "$conf_arg"): not a file name in an existing directory"
+    [[ ! -d $conf_arg && ${conf_arg##*/} != . && ${conf_arg##*/} != .. ]] ||
+        die "--conf $(q "$conf_arg"): is a directory, not a file name"
+    conf=$(cd -- "$(dirname -- "$conf_arg")" && pwd)/${conf_arg##*/}
+fi
+builddir=${conf%/*}
+conf_opt='' # repeated in the printed commands when not the default
+[[ $conf == "$here/selection.conf" ]] || conf_opt=" --conf $(q "$conf")"
+
 instructions() {
     cat >&2 <<EOF
 To get the SDK: sign in to the NVIDIA Developer Program at
   https://developer.nvidia.com/opticalflow/download
 accept the licence and download optical_flow_sdk_${version}.zip yourself (it may
 not be redistributed). Then select it:
-  $(q "$here/$prog") --src ~/Downloads/optical_flow_sdk_${version}.zip --write
+  $(q "$here/$prog") --src ~/Downloads/optical_flow_sdk_${version}.zip --write$conf_opt
 EOF
 }
 
 # show_selection: the current selection.conf, or the default.
 show_selection() {
     if ! nvidia_of_read_selection "$conf"; then
-        echo "   $conf is not valid (see above); fix it or write it again with --write"
+        echo "   $conf is not valid (see above); fix it or write it again with --write$conf_opt"
         return 1
     fi
     if [[ ! -e $conf ]]; then
         echo "   no selection.conf ($conf): the build uses the environment or the default"
-        echo "   (NVIDIA_OF_SRC=$here, no checksum)"
+        echo "   (NVIDIA_OF_SRC=$builddir, no checksum)"
     else
         echo "   $conf:"
-        echo "   NVIDIA_OF_SRC=${nvidia_of_file_src:-(not set: $here)}"
+        echo "   NVIDIA_OF_SRC=${nvidia_of_file_src:-(not set: $builddir)}"
         echo "   SHA256=${nvidia_of_file_sha256:-(not set: none)}"
     fi
     local key
@@ -125,7 +149,7 @@ else
     if [[ -n $nvidia_of_file_src ]]; then
         src=$nvidia_of_file_src src_from=$conf
     else
-        src=$here src_from="the default (this directory)"
+        src=$builddir src_from="the default (the directory of $(q "$conf"))"
     fi
 fi
 [[ $src != *$'\n'* ]] ||
@@ -155,7 +179,7 @@ for key in version source layout sha256 features root api fruc-header fruc-lib c
 done
 
 if ((write)); then
-    tmpfile=$(mktemp "$here/.selection.conf.XXXXXX")
+    tmpfile=$(mktemp "$builddir/.selection.conf.XXXXXX")
     trap 'rm -f -- "$tmpfile"' EXIT
     {
         echo "# The nvidia-optical-flow build selection, written by configure.sh. The"
@@ -169,14 +193,14 @@ if ((write)); then
         die "the path ${scan[source]} cannot be stored in selection.conf (it holds \$, a backtick, a quote" \
             "or a control character): rename it, or set NVIDIA_OF_SRC in the environment instead"
     chmod 644 -- "$tmpfile"
-    mv -f -- "$tmpfile" "$conf"
+    mv -fT -- "$tmpfile" "$conf"
     trap - EXIT
     echo "Wrote $conf:"
     grep -v '^#' "$conf" | sed 's/^/  /'
     [[ ${scan[sha256]} != none ]] ||
         echo "  (an extracted tree has no checksum: it is packaged as it is)"
     echo "  features: ${scan[features]}"
-    echo "Next: (cd $(q "$here") && makepkg -f)"
+    echo "Next: (cd $(q "$builddir") && makepkg -f)"
     exit 0
 fi
 
@@ -210,6 +234,6 @@ show_selection || true
 echo
 echo "Commands:"
 echo "  save this source (and the zip's checksum):"
-echo "    $(q "$here/$prog") --src $(q "${scan[source]}") --write"
+echo "    $(q "$here/$prog") --src $(q "${scan[source]}") --write$conf_opt"
 echo "  build:"
-echo "    (cd $(q "$here") && makepkg -f)"
+echo "    (cd $(q "$builddir") && makepkg -f)"

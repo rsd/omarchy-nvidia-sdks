@@ -242,7 +242,7 @@ To save a selection:
 maxine-vfx/configure.sh --src ~/Downloads/maxine --archs sm_120 --features all --write
 ```
 
-This checks the selection against what is present (a feature or architecture you have not downloaded is an error, and the message names the command that fetches it) and writes `maxine-vfx/selection.conf`. Git ignores the file because it holds a local path. The PKGBUILD reads it when it builds. It is parsed as plain `KEY=value` lines and never executed. An environment variable overrides the file, and the file overrides the built-in default. `configure.sh --show` prints the current file.
+This checks the selection against what is present (a feature or architecture you have not downloaded is an error, and the message names the command that fetches it) and writes `maxine-vfx/selection.conf`. Git ignores the file because it holds a local path. The PKGBUILD reads it when it builds. It is parsed as plain `KEY=value` lines and never executed. An environment variable overrides the file, and the file overrides the built-in default. `configure.sh --show` prints the current file, and `--conf FILE` makes `configure.sh` read and write another file, such as the `selection.conf` of an AUR clone ([docs/aur.md](docs/aur.md)).
 
 To fetch more features or architectures, run `maxine-vfx/download.sh` again with `--features` or `--archs`, then `configure.sh` and `makepkg` again. Which GPUs are supported, how to find your architecture and how to fetch models for another GPU are in [docs/gpu-support.md](docs/gpu-support.md).
 
@@ -289,11 +289,13 @@ scripts/setup.sh                  guided setup: preflight, download detection, c
 scripts/check-ngc.sh              read-only check of your NGC key and of your account's access to the Maxine models
 scripts/setup.d/                  one descriptor per SDK for setup.sh (format in scripts/setup.d/README)
 scripts/test.sh                   runs every check of this repository
+scripts/aur.sh                    makes a recipe's AUR copy: its helpers fetched from a pinned commit of this repository (docs/aur.md)
 scripts/tests/                    tests of the guard, of env.sh, of setup.sh, of check-ngc.sh and of a PKGBUILD fixture build
 docs/setup.md                     the guided setup: steps, options, key handling, the sudo commands, undo
 docs/download.md                  what is downloaded, from where and whether it needs a login, for every SDK; and downloading the Maxine SDKs from NGC: the one-command path, the manual steps, sizes, the credential check, access (HTTP 402), troubleshooting, for the three Maxine SDKs
 docs/optical-flow.md              the Optical Flow SDK package: browser download, what it installs, environment file, use, check, troubleshooting
 docs/tensorrt.md                  the TensorRT package: the download (automatic or in a browser), what it installs, environment file, pkg-config, CMake and RPATH, the AUR's tensorrt, CUDA versions
+docs/aur.md                       the recipes on the AUR: how the AUR copies are made and published
 docs/usage.md                     how a program uses each installed package: environment file, shim, models
 docs/gpu-support.md               supported GPUs, architectures and how to fetch their models
 maxine-vfx/PKGBUILD               the package recipe
@@ -317,7 +319,7 @@ tools/maxine-probe/               a small program that checks the SDK loads
 scripts/test.sh
 ```
 
-This runs every check in the repository, for all five packages: shellcheck over every script, the syntax and metadata of each PKGBUILD, the fixture tests of each package's `assemble.sh`, `configure.sh` and `download.sh` (the last against a fake `ngc`), the `configure.sh` and `selection.conf` tests of the Optical Flow and TensorRT packages on tiny fake zips, archives and trees, a `makepkg` build of each PKGBUILD against fake SDK files, the shim test, the tests of `scripts/setup.sh` and `scripts/check-ngc.sh` (with stubbed `pacman`, `sudo`, `makepkg`, `ngc`, `curl` and `nvidia-smi`, so nothing is installed and nothing reaches NGC), and the licence guard and its hooks, then the guard over the whole tree. It needs `shellcheck` (a tool that checks shell scripts for mistakes). A GPU is not required, it uses no network and it needs no NVIDIA download. The `makepkg` fixture builds, and the Optical Flow and TensorRT `configure.sh` tests where they need `bsdtar`, are skipped when `makepkg`, `fakeroot` or `bsdtar` is missing.
+This runs every check in the repository, for all five packages: shellcheck over every script, the syntax and metadata of each PKGBUILD, the fixture tests of each package's `assemble.sh`, `configure.sh` and `download.sh` (the last against a fake `ngc`), the `configure.sh` and `selection.conf` tests of the Optical Flow and TensorRT packages on tiny fake zips, archives and trees, a `makepkg` build of each PKGBUILD against fake SDK files, the AUR copies `scripts/aur.sh` makes (and a build of one from a directory holding only its PKGBUILD), the shim test, the tests of `scripts/setup.sh` and `scripts/check-ngc.sh` (with stubbed `pacman`, `sudo`, `makepkg`, `ngc`, `curl` and `nvidia-smi`, so nothing is installed and nothing reaches NGC), and the licence guard and its hooks, then the guard over the whole tree. It needs `shellcheck` (a tool that checks shell scripts for mistakes). A GPU is not required, it uses no network and it needs no NVIDIA download. The `makepkg` fixture builds, and the Optical Flow and TensorRT `configure.sh` tests where they need `bsdtar`, are skipped when `makepkg`, `fakeroot` or `bsdtar` is missing.
 
 ## Licences and caveats
 

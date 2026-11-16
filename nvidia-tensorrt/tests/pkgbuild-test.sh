@@ -8,8 +8,9 @@
 # ELF shared objects, built with cc) and that nothing else lies outside
 # /opt/nvidia/tensorrt and /usr/share. Builds: the
 # archive from the environment, a tree from selection.conf, and failures
-# for a checksum mismatch, another version and a hostile selection.conf
-# (never executed, not even by `makepkg --printsrcinfo`), for an
+# for a checksum mismatch, another version, a hostile selection.conf
+# (never executed, not even by `makepkg --printsrcinfo`), an invalid one
+# (manual at global scope, so nothing is downloaded first), for an
 # archive or tree with a symbolic link out of it or a special file, and for
 # a tree changed after configure.sh --write; the archive unpinned (no
 # published checksum: built, with its SHA-256 printed; a SHA-256 recorded by
@@ -533,6 +534,47 @@ build hostile
 check "a hostile selection.conf stops the build" test "$status" -ne 0
 check "it names the line" logged "selection.conf:1: the value of NVIDIA_TRT_SRC must not contain"
 check "nothing in it was executed" test ! -e "$pwned"
+rm -f "$recipe/selection.conf"
+
+# An invalid selection.conf is manual at global scope: prepare() rejects it
+# before anything is downloaded (the stub would deliver the archive).
+# invalid <name> <description> <line>: one such file, checked.
+invalid() {
+    printf '%s\n' "$3" >"$recipe/selection.conf"
+    check "$2: no source in the metadata" \
+        test -z "$(srcinfo | grep -E $'^\t(source|sha256sums|noextract) =' || true)"
+    stub_reset
+    printf '%s\n' "$dl/$name" >"$stubdir/deliver"
+    mkdir -p "$tmp/$1-srcdest" # empty: a download would have to be fetched
+    build "$1" SRCDEST="$tmp/$1-srcdest"
+    check "$2: stops the build" test "$status" -ne 0
+    check "$2: names the line" logged "selection.conf:1: "
+    check "$2: nothing was fetched" test ! -e "$stubdir/calls"
+    stub_reset
+    rm -f "$recipe/selection.conf"
+}
+invalid spaced "NVIDIA_TRT_SRC = /x" "NVIDIA_TRT_SRC = /x"
+invalid exported "an export line" "export NVIDIA_TRT_SRC=$dl/$name"
+invalid garbage "a line of garbage" "this is not a selection"
+invalid badsha "a malformed NVIDIA_TRT_SHA256" "NVIDIA_TRT_SHA256=abc"
+mkdir "$recipe/selection.conf"
+check "a selection.conf that is a directory: no source in the metadata" \
+    test -z "$(srcinfo | grep -E $'^\t(source|sha256sums|noextract) =' || true)"
+rmdir "$recipe/selection.conf"
+# Comments, blank lines and a checksum alone name no source: the download.
+printf '# only a checksum\n\n  # indented\nNVIDIA_TRT_SHA256=%s\n' "$sum" >"$recipe/selection.conf"
+check "comments and a checksum alone keep the download in the metadata" \
+    grep -qxF $'\tsource = '"$name::$url" <<<"$(srcinfo)"
+rm -f "$recipe/selection.conf"
+# A comment that is not valid UTF-8 (Latin-1 "café"), in a UTF-8 locale: the
+# PKGBUILD's scope logic and selection.sh must both call it a comment, so
+# the file is a checksum alone and the download stays.
+printf '# caf\xe9\nNVIDIA_TRT_SHA256=%s\n' "$sum" >"$recipe/selection.conf"
+check "a Latin-1 comment is a comment to the PKGBUILD (download kept)" \
+    grep -qxF $'\tsource = '"$name::$url" <<<"$(srcinfo LC_ALL=en_US.UTF-8)"
+# shellcheck disable=SC2016 # the script for bash -c expands its own arguments
+check "and to selection.sh (valid, no source, the checksum read)" \
+    test "$(LC_ALL=en_US.UTF-8 bash -c '. "$1"; nvidia_trt_read_selection "$2" && printf "[%s][%s]" "$nvidia_trt_file_src" "$nvidia_trt_file_sha256"' _ "$recipe/selection.sh" "$recipe/selection.conf")" = "[][$sum]"
 rm -f "$recipe/selection.conf"
 
 build relative NVIDIA_TRT_SRC=dl
