@@ -77,7 +77,7 @@
 
 pkgname=nvidia-tensorrt-sdk-local
 pkgver=11.4.0.106
-pkgrel=4
+pkgrel=5
 pkgdesc="NVIDIA TensorRT for CUDA 13.4, downloaded from NVIDIA at build time, packaged under /opt/nvidia/tensorrt (personal use, not redistributable)"
 arch=('x86_64')
 url='https://developer.nvidia.com/tensorrt/download'

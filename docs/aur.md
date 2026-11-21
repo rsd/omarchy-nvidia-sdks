@@ -1,6 +1,8 @@
 # The recipes on the AUR
 
-The five recipes are prepared for the Arch User Repository (AUR), as recipes only: `scripts/aur.sh` generates each AUR package's files from this repository.
+This guide is for the maintainer who publishes the recipes on the Arch User Repository (AUR). To install a package, see [INSTALL.md](../INSTALL.md).
+
+The five recipes are prepared for the AUR, as recipes only: `scripts/aur.sh` generates each AUR package's files from this repository. Four are published: `maxine-vfx-sdk-local`, `maxine-ar-sdk-local`, `maxine-afx-sdk-local` and `nvidia-optical-flow-sdk-local`. `nvidia-tensorrt-sdk-local` is not on the AUR.
 
 | AUR package | Recipe | What the user supplies |
 | --- | --- | --- |
@@ -14,7 +16,7 @@ No NVIDIA file is in an AUR repository, in this repository or in the commit an A
 
 ## How the AUR copy differs
 
-A recipe in this repository reads its helpers (`selection.sh`, `assemble.sh`, `source.sh`, the os-release shim's source, the documents it installs) from the working tree, through `_repo=$(realpath -- "$startdir/..")`. An AUR clone holds only its own files, so `scripts/aur.sh` generates a copy of the PKGBUILD that:
+A recipe in this repository reads its helpers from the working tree, through `_repo=$(realpath -- "$startdir/..")`. The helpers are `selection.sh`, `assemble.sh`, `source.sh`, the os-release shim's source and the documents it installs. An AUR clone holds only its own files, so `scripts/aur.sh` generates a copy of the PKGBUILD that:
 
 - fetches this repository at one pinned commit, `omarchy-nvidia-sdks::git+https://github.com/rsd/omarchy-nvidia-sdks.git#commit=<sha>`, with the SHA-256 `makepkg` computes for a git source pinned by commit (that of `git archive` of the commit), and adds `git` to `makedepends`;
 - reads the helpers from `$srcdir/omarchy-nvidia-sdks`;
@@ -40,6 +42,6 @@ For a package not yet on the AUR, `git init -b master aur/<package>` and `git -C
 
 `--aur` writes into the top of a git clone only, refuses a clone that holds any other file, and commits nothing. `scripts/aur.sh --recipe DIR` prints the AUR PKGBUILD and `--srcinfo` its `.SRCINFO`. `LICENSE` is the 0BSD licence the AUR submission guidelines recommend for package sources; it covers the AUR repository's files, not NVIDIA's software.
 
-A helper change reaches AUR users only through a new pinned commit: regenerate, bump `pkgrel`, and push. Optionally run `namcap PKGBUILD` in the AUR clone, and `namcap` on a built package (which stays local).
+A helper or document change reaches AUR users only through a new pinned commit. Regenerate, bump `pkgrel`, and push. A change to a document that a recipe installs (`docs/usage.md` for the three Maxine packages, the recipe's `README.md` for Optical Flow and TensorRT) needs this too. Optionally run `namcap PKGBUILD` in the AUR clone, and `namcap` on a built package (which stays local).
 
 `scripts/tests/aur-test.sh` (run by `scripts/test.sh`) generates the five copies from a snapshot of the working tree, compares each `.SRCINFO` with a fresh one, and builds `maxine-vfx-sdk-local` from a directory holding only its generated PKGBUILD against fake SDK files.

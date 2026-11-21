@@ -1,22 +1,22 @@
 # Using the Maxine SDK packages
 
-This page is for programs and projects that load a Maxine SDK after one of three packages installed it: `maxine-vfx-sdk-local` (Video Effects), `maxine-ar-sdk-local` (AR) or `maxine-afx-sdk-local` (Audio Effects). Maxine is NVIDIA's family of AI video and audio effects. Each package installs this page as `/usr/share/doc/<package>/usage.md`.
+This guide shows how a program loads a Maxine SDK after you install its package: `maxine-vfx-sdk-local` (Video Effects), `maxine-ar-sdk-local` (AR) or `maxine-afx-sdk-local` (Audio Effects). Maxine is NVIDIA's family of AI video and audio effects. Each package installs this page as `/usr/share/doc/<package>/usage.md`.
 
-The sections from "What the package installs" to "Troubleshooting" describe the Video Effects package. The [Maxine AR SDK](#maxine-ar-sdk) and [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) sections describe the other two, which follow the same pattern:
+All three packages follow the same pattern:
 
 - an environment file (a text file of `KEY=value` settings) that you load for one program;
 - a shim (a small library that makes the SDK accept your distribution) that you preload on that program;
-- no global setting.
+- no global setting. [Why nothing is global](#why-nothing-is-global) says why.
 
-[Why nothing is global](#why-nothing-is-global) says why.
+The sections from "What the package installs" to "Troubleshooting" describe the Video Effects package. The [Maxine AR SDK](#maxine-ar-sdk) and [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) sections describe the other two. For the Optical Flow SDK and TensorRT packages, see [Other packages](#other-packages-optical-flow-and-tensorrt).
 
-For the Optical Flow SDK and TensorRT packages, see [Other packages](#other-packages-optical-flow-and-tensorrt). For building the packages, see [download.md](download.md), [../maxine-vfx/README.md](../maxine-vfx/README.md), [../maxine-ar/README.md](../maxine-ar/README.md) and [../maxine-afx/README.md](../maxine-afx/README.md). For supported GPUs and architectures, see [gpu-support.md](gpu-support.md).
+Related pages: [../INSTALL.md](../INSTALL.md) installs the packages. [download.md](download.md), [../maxine-vfx/README.md](../maxine-vfx/README.md), [../maxine-ar/README.md](../maxine-ar/README.md) and [../maxine-afx/README.md](../maxine-afx/README.md) cover the build. [gpu-support.md](gpu-support.md) lists supported GPUs and architectures.
 
-The package contains NVIDIA software and is for your own machine only; see the "Licence and personal use" section of the [README](../README.md). NVIDIA does not support this configuration (Arch, distributions the SDK does not list, client-side use).
+The package contains NVIDIA software and is for your own machine only. See the "Licence and personal use" section of the [README](../README.md#licences-and-caveats). NVIDIA does not support this configuration (Arch, distributions the SDK does not list, client-side use).
 
 ## Quick start
 
-Install the package first (see the [README](../README.md#quick-start)). Then, for the Video Effects package, run any program that uses it like this. Replace `<program>` with the program's command. For the AR and Audio Effects packages, use the commands in their sections below.
+Install the package first ([INSTALL.md](../INSTALL.md)). Then run any program that uses the Video Effects package like this. Replace `<program>` with the program's command. For the AR and Audio Effects packages, use the commands in their sections below.
 
 1. Load the environment file in your shell. This sets the library paths for this shell only:
 
@@ -383,7 +383,17 @@ Two further packages are not Maxine SDKs and have their own pages: `nvidia-optic
 | `nvidia-optical-flow-sdk-local` | `/opt/nvidia/optical-flow` | `/usr/share/nvidia-optical-flow/nvidia-optical-flow.env` | `NVIDIA_OF_LIBRARY_PATH` (absent when FRUC is not packaged) |
 | `nvidia-tensorrt-sdk-local` | `/opt/nvidia/tensorrt` | `/usr/share/nvidia-tensorrt/nvidia-tensorrt.env` | `NVIDIA_TRT_LIBRARY_PATH` |
 
-A program that combines these with a Maxine SDK loads several environment files, and each sets `LD_LIBRARY_PATH`, so the last one wins. Build `LD_LIBRARY_PATH` yourself from the `*_LIBRARY_PATH` keys (`MAXINE_VFX_LIBRARY_PATH`, `MAXINE_AR_LIBRARY_PATH`, `MAXINE_AFX_LIBRARY_PATH`, `NVIDIA_OF_LIBRARY_PATH`, `NVIDIA_TRT_LIBRARY_PATH`), skipping the keys that a file does not set, and set it after loading the files. In a systemd unit, write the joined value in an `Environment=LD_LIBRARY_PATH=...` line after the `EnvironmentFile=` lines. The TensorRT package is the exception to the rule that a program must opt in: it installs an `/etc/ld.so.conf.d` entry, so its TensorRT 11 is on the system loader path, and it links the builder-resource libraries into `/usr/lib` under their TensorRT 11 file names, because `libnvinfer` opens them by file name (see [the TensorRT guide](tensorrt.md#what-the-package-installs)). Those links carry the `.11.4.0` names, so they never stand in for a TensorRT 10 library of a Maxine SDK. It does not shadow the TensorRT 10 that the Maxine SDKs bundle: the sonames differ (`libnvinfer.so.11` against `libnvinfer.so.10`), and the `LD_LIBRARY_PATH` from a Maxine SDK's environment file is searched before the loader cache. A program that combines them therefore no longer needs `NVIDIA_TRT_LIBRARY_PATH` in its `LD_LIBRARY_PATH`.
+A program that combines these with a Maxine SDK loads several environment files. Each sets `LD_LIBRARY_PATH`, so the last one wins. To combine them:
+
+1. Build `LD_LIBRARY_PATH` yourself from the `*_LIBRARY_PATH` keys (`MAXINE_VFX_LIBRARY_PATH`, `MAXINE_AR_LIBRARY_PATH`, `MAXINE_AFX_LIBRARY_PATH`, `NVIDIA_OF_LIBRARY_PATH`, `NVIDIA_TRT_LIBRARY_PATH`), skipping the keys that a file does not set.
+2. Set it after loading the files. In a systemd unit, write the joined value in an `Environment=LD_LIBRARY_PATH=...` line after the `EnvironmentFile=` lines.
+
+The TensorRT package is the exception to the rule that a program must opt in:
+
+- It installs an `/etc/ld.so.conf.d` entry, so its TensorRT 11 is on the system loader path.
+- It links the builder-resource libraries into `/usr/lib` under their TensorRT 11 file names, because `libnvinfer` opens them by file name (see [the TensorRT guide](tensorrt.md#what-the-package-installs)). Those links carry the `.11.4.0` names, so they never stand in for a TensorRT 10 library of a Maxine SDK.
+- It does not shadow the TensorRT 10 that the Maxine SDKs bundle. The sonames differ (`libnvinfer.so.11` against `libnvinfer.so.10`), and the `LD_LIBRARY_PATH` from a Maxine SDK's environment file is searched before the loader cache.
+- A program that combines them therefore no longer needs `NVIDIA_TRT_LIBRARY_PATH` in its `LD_LIBRARY_PATH`.
 
 ## Why nothing is global
 
@@ -391,5 +401,5 @@ None of the three Maxine packages installs an `/etc/ld.so.conf.d` entry or an `/
 
 - Each SDK bundles its own CUDA 12.8, cuDNN and TensorRT 10.9. On Arch, which ships CUDA 13, putting them on the global library path would shadow the system libraries for every program. The bundled directories are on the path only for the program that loads the environment file.
 - `LD_PRELOAD` is per process by design. The shim redirects one file, `/etc/os-release`, for the process that preloads it, so that only that process sees the replacement and the real file stays untouched.
-- The packages can be installed side by side because each has its own directory under `/opt/nvidia/maxine/`, its own `/usr/lib/maxine-*` and its own environment file. A program that uses more than one SDK must combine them itself. The environment files all set `LD_LIBRARY_PATH`, so with two files loaded the later one wins: build the value from the `MAXINE_VFX_LIBRARY_PATH`, `MAXINE_AR_LIBRARY_PATH` and `MAXINE_AFX_LIBRARY_PATH` keys, which are the same values under names that do not collide, and set `LD_LIBRARY_PATH` explicitly. In a systemd unit, write the joined value out in an `Environment=LD_LIBRARY_PATH=...` line after the `EnvironmentFile=` lines, since the unit file cannot expand a variable that comes from an environment file.
+- The packages can be installed side by side because each has its own directory under `/opt/nvidia/maxine/`, its own `/usr/lib/maxine-*` and its own environment file. A program that uses more than one SDK must combine them itself. The environment files all set `LD_LIBRARY_PATH`, so with two files loaded the later one wins. Build the value from the `MAXINE_VFX_LIBRARY_PATH`, `MAXINE_AR_LIBRARY_PATH` and `MAXINE_AFX_LIBRARY_PATH` keys, which are the same values under names that do not collide, and set `LD_LIBRARY_PATH` explicitly. In a systemd unit, write the joined value out in an `Environment=LD_LIBRARY_PATH=...` line after the `EnvironmentFile=` lines, since the unit file cannot expand a variable that comes from an environment file.
 - A package whose SDK you do not use costs nothing at run time: nothing loads it until a program opts in.

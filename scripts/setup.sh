@@ -522,7 +522,7 @@ Environment:
                       ($(for key in "${sdk_keys[@]}"; do printf '%s_SRC\n' "${D[$key:env_prefix]}"; done | paste -sd ' '))
 
 The SDKs are described in scripts/setup.d/ (format: scripts/setup.d/README).
-Documentation: README.md, docs/setup.md, $(for key in "${sdk_keys[@]}"; do printf '%s\n' "${D[$key:byhand_doc]%%#*}"; done | awk '!seen[$0]++' | paste -sd ' ' | sed 's/ /, /g')
+Documentation: README.md, INSTALL.md, $(for key in "${sdk_keys[@]}"; do printf '%s\n' "${D[$key:byhand_doc]%%#*}"; done | awk '!seen[$0]++' | paste -sd ' ' | sed 's/ /, /g')
 USAGE
 }
 

@@ -55,7 +55,7 @@
 
 pkgname=maxine-ar-sdk-local
 pkgver=1.2.0.0
-pkgrel=1
+pkgrel=2
 pkgdesc="NVIDIA Maxine AR SDK, packaged from the user's own download (personal use, not redistributable)"
 arch=('x86_64')
 url='https://catalog.ngc.nvidia.com/orgs/nvidia/maxine/resources/ar_sdk_core'

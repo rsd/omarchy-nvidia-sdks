@@ -54,7 +54,7 @@
 
 pkgname=maxine-afx-sdk-local
 pkgver=3.0.0.12
-pkgrel=2
+pkgrel=3
 pkgdesc="NVIDIA Maxine Audio Effects SDK, packaged from the user's own download (personal use, not redistributable)"
 arch=('x86_64')
 url='https://catalog.ngc.nvidia.com/orgs/nvidia/teams/maxine/resources/maxine_linux_audio_effects_sdk'

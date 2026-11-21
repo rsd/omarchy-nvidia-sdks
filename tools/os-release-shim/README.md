@@ -1,15 +1,17 @@
 # os-release-shim
 
-A small `LD_PRELOAD` library that shows one process a replacement `/etc/os-release`. It is a compatibility shim for distributions the SDK does not list; NVIDIA does not support this configuration. The model loader of the NVIDIA Maxine Video Effects SDK reads `/etc/os-release` and refuses distributions it does not list, so on such a distribution `NvVFX_Load` fails with `-1209`. With the shim preloaded, the program that loads the SDK reads a replacement file naming a listed distribution instead.
+A small `LD_PRELOAD` library that shows one process a replacement `/etc/os-release`. You need it to run the Maxine SDKs on a distribution that NVIDIA does not list. The Maxine packages build and install it for you.
 
-The `maxine-vfx` package ([`../../maxine-vfx/`](../../maxine-vfx/)) builds it and installs it inactive:
+The model loader of the NVIDIA Maxine Video Effects SDK reads `/etc/os-release` and refuses distributions it does not list. On such a distribution `NvVFX_Load` fails with `-1209`. With the shim preloaded, the program that loads the SDK reads a replacement file naming a listed distribution instead. This is a compatibility shim. NVIDIA does not support this configuration.
+
+The `maxine-vfx` package ([`../../maxine-vfx/`](../../maxine-vfx/)) builds it and installs it inactive. The `maxine-ar` and `maxine-afx` packages do the same under their own `/usr/lib/maxine-ar/` and `/usr/lib/maxine-afx/` directories.
 
 | Path | Content |
 |---|---|
 | `/usr/lib/maxine-vfx/os-release-shim.so` | the library |
 | `/usr/lib/maxine-vfx/fake-os-release` | the replacement `os-release` (Ubuntu 24.04), from [`../maxine-probe/fake-os-release`](../maxine-probe/fake-os-release) |
 
-Nothing activates it: a consumer preloads it on its own program ([docs/usage.md](../../docs/usage.md)).
+Nothing activates it. A consumer preloads it on its own program ([docs/usage.md](../../docs/usage.md)).
 
 It was first written for the omarchy-broadcast project. Its environment variables are `MAXINE_OS_RELEASE` and `MAXINE_OS_RELEASE_DEBUG`; the deprecated names from that project are still read (see below).
 

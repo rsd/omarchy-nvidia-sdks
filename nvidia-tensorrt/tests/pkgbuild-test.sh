@@ -168,7 +168,7 @@ mkdir -p "$tmp/home"
 srcinfo_before=$(srcinfo)
 check "the metadata provides nvidia-tensorrt-sdk" grep -qxF $'\tprovides = nvidia-tensorrt-sdk=11.4.0.106' <<<"$srcinfo_before"
 check "the metadata provides tensorrt" grep -qxF $'\tprovides = tensorrt=11.4.0.106' <<<"$srcinfo_before"
-check "the metadata has pkgrel 4" grep -qxF $'\tpkgrel = 4' <<<"$srcinfo_before"
+check "the metadata has pkgrel 5" grep -qxF $'\tpkgrel = 5' <<<"$srcinfo_before"
 url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.4.0/tars/$name
 check "the metadata has the exact download URL, named as the archive" \
     grep -qxF $'\tsource = '"$name::$url" <<<"$srcinfo_before"

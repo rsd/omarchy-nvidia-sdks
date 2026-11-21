@@ -1,16 +1,18 @@
 # The Optical Flow SDK package
 
-Optical flow measures how each part of an image moves between two video frames. This page is for the person who builds `nvidia-optical-flow-sdk-local` and for programs that use it. You build the package from your own download of the NVIDIA Optical Flow SDK 5.0.7 (an SDK is a software development kit: headers, libraries and samples). It installs the SDK's headers, the FRUC (frame rate up-conversion) library when your download has it, and the samples and the NvOFTracker as source, under `/opt/nvidia/optical-flow`. The Optical Flow runtime itself, `libnvidia-opticalflow.so`, is not part of the SDK: it comes from the NVIDIA driver (`nvidia-utils`).
+This guide builds and installs `nvidia-optical-flow-sdk-local` from your own download of the NVIDIA Optical Flow SDK 5.0.7. It is for the person who builds the package and for programs that use it.
 
-The recipe's own reference, with every build input and the rules for what is searched for, is [../nvidia-optical-flow/README.md](../nvidia-optical-flow/README.md). `scripts/setup.sh --sdk of` runs the steps below for you; see [setup.md](setup.md).
+Optical flow measures how each part of an image moves between two video frames. An SDK is a software development kit: headers, libraries and samples. The package installs the SDK's headers, the FRUC (frame rate up-conversion) library when your download has it, and the samples and the NvOFTracker as source, under `/opt/nvidia/optical-flow`. The Optical Flow runtime itself, `libnvidia-opticalflow.so`, is not part of the SDK. It comes from the NVIDIA driver (`nvidia-utils`).
 
-The package contains NVIDIA software and is for your own machine only; see the "Licence and personal use" section of the [README](../README.md) and [Licence notes](#licence-notes) below. NVIDIA does not support this configuration (Arch Linux, a package built by a third-party recipe).
+`scripts/setup.sh --sdk of` runs the steps below for you ([INSTALL.md](../INSTALL.md)). The recipe's own reference, with every build input and the rules for what is searched for, is [../nvidia-optical-flow/README.md](../nvidia-optical-flow/README.md).
+
+The package contains NVIDIA software and is for your own machine only. See the "Licence and personal use" section of the [README](../README.md#licences-and-caveats) and [Licence notes](#licence-notes) below. NVIDIA does not support this configuration (Arch Linux, a package built by a third-party recipe).
 
 The recipe was written and tested against NVIDIA's documented layout of the SDK (its release notes), with fake files of the documented names, not against a real archive. The API headers are searched for by name rather than by fixed path, so small differences in directory names are tolerated. If your download does not hold the API headers, `configure.sh` and the build stop with an error that says what they looked for. Nothing is packaged from a layout they do not recognise.
 
 ## Quick start
 
-You need an NVIDIA RTX GPU (Turing or newer), an Arch-based distribution, the NVIDIA driver (525.85.05 or newer for this SDK) and a free NVIDIA Developer Program account. This SDK needs no NGC account and no API key.
+Before you start, you need an NVIDIA RTX GPU (Turing or newer), an Arch-based distribution, the NVIDIA driver (525.85.05 or newer for this SDK) and a free NVIDIA Developer Program account. This SDK needs no NGC account and no API key.
 
 1. **Download the file. This step is yours** (it needs your NVIDIA login and your acceptance of NVIDIA's licence). Open <https://developer.nvidia.com/opticalflow/download>, log in, read the NVIDIA DesignWorks SDK License and select "Accept & Download" for `optical_flow_sdk_5.0.7.zip`. Save it in `~/Downloads`.
 2. **Look first.** This is read-only:
@@ -29,7 +31,7 @@ You need an NVIDIA RTX GPU (Turing or newer), an Arch-based distribution, the NV
    *Success:* section `7. Check` shows `ok` for `of`, and the exit status is 0.
 4. **Check by hand** (see [Check the installation](#check-the-installation)): `ldconfig -p` must list `libnvidia-opticalflow.so.1`.
 
-If it fails, see [Troubleshooting](#troubleshooting).
+If a step fails, see [Troubleshooting](#troubleshooting).
 
 ## Download
 
@@ -41,13 +43,13 @@ NVIDIA publishes the SDK as one zip, behind a Developer Program login and a lice
 
 NVIDIA publishes no checksum for the zip. `configure.sh --write` records the SHA-256 of your download, and the build verifies the zip against it, so a file that changed in between is refused.
 
-Then build and install. Either use the guided script, which prints each command and asks before running it:
+Then build and install. Use the guided script, which prints each command and asks before running it:
 
 ```bash
 scripts/setup.sh --sdk of
 ```
 
-or do it by hand:
+Or do it by hand:
 
 ```bash
 cd nvidia-optical-flow

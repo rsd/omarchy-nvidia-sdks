@@ -50,7 +50,7 @@
 
 pkgname=nvidia-optical-flow-sdk-local
 pkgver=5.0.7
-pkgrel=1
+pkgrel=2
 pkgdesc="NVIDIA Optical Flow SDK, packaged from the user's own download (personal use, not redistributable)"
 arch=('x86_64')
 url='https://developer.nvidia.com/opticalflow/download'

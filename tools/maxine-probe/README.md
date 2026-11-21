@@ -1,8 +1,8 @@
 # maxine-probe
 
-A small standalone C program that checks an installed Maxine Video Effects SDK, such as the tree the `maxine-vfx` package installs under `/opt/nvidia/maxine/videofx`. It is a verification aid, not part of the package.
+A small standalone C program that checks an installed Maxine Video Effects SDK, such as the tree the `maxine-vfx` package installs under `/opt/nvidia/maxine/videofx`. Run it after you install the package to confirm that the effects load and run. It is a verification aid, not part of the package.
 
-It uses the GPU: it creates a CUDA context and runs the effects on frames in GPU memory. Run it when nothing else depends on the GPU being idle.
+It uses the GPU. It creates a CUDA context and runs the effects on frames in GPU memory. Run it when nothing else depends on the GPU being idle.
 
 ## What it checks
 

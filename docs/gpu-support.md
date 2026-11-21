@@ -1,6 +1,8 @@
 # GPU support of the Maxine Video Effects SDK
 
-This page says which GPUs the SDK 1.3.0.0 (Linux) supports, how to find the architecture of your GPU, and how to fetch the models for another one. An SDK is a software development kit: the libraries, headers and AI models a program uses. This page applies to the `maxine-vfx-sdk-local` package. The package contains the models of the architectures you select, so the architecture decides what you download and what you build. What applies to the AR SDK and the Audio Effects SDK is in [AR and Audio Effects SDKs](#ar-and-audio-effects-sdks).
+This guide tells you which GPUs the Maxine Video Effects SDK 1.3.0.0 (Linux) supports, how to find your GPU's architecture, and how to fetch the models for another GPU. It applies to the `maxine-vfx-sdk-local` package. For the AR and Audio Effects SDKs, see [AR and Audio Effects SDKs](#ar-and-audio-effects-sdks).
+
+An SDK is a software development kit: the libraries, headers and AI models a program uses. The package contains the models of the architectures you select, so the architecture decides what you download and what you build.
 
 ## Quick start
 
@@ -44,7 +46,7 @@ Notes on the table:
 
 ## Find your architecture
 
-Look it up once, by hand (the same command as in the quick start):
+Look it up once, by hand. This is the same command as in the quick start:
 
 ```bash
 nvidia-smi --query-gpu=compute_cap --format=csv,noheader
@@ -80,7 +82,7 @@ To use a GPU of another architecture (a second machine, a new card), fetch that 
 
 3. Rebuild and reinstall the package, as described in [download.md](download.md#next-step).
 
-`configure.sh --src ~/Downloads/maxine` without other options lists what your download contains and what the SDK offers; see [download.md](download.md) and the [README](../README.md#choose-your-features-and-gpu).
+`configure.sh --src ~/Downloads/maxine` without other options lists what your download contains and what the SDK offers; see [download.md](download.md) and [INSTALL.md](../INSTALL.md#choose-features-and-architectures).
 
 ### Size cost per architecture
 
