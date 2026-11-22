@@ -160,7 +160,11 @@ nvidia-smi --query-gpu=compute_cap --format=csv,noheader   # 12.0 -> sm_120
 
 In an SDK tree, a model file belongs to an architecture when one of the underscore-separated fields of its name is a known SM number: `AIGS_288x512_120_m0.engine.trtpkg` is `sm_120`. Files of the other architectures are left out. A file whose name carries no SM number is kept and listed in a note. In a download, a file belongs to the architecture of its `models_linux_sm<N>` directory.
 
-Each architecture adds the model packages of every selected feature that has models. In 1.3.0.0 Linux only green screen, denoising and relighting have them. For `sm_120` that is about 113 MiB, 3.7 MiB and 79 MiB. The sizes for every architecture are in [../docs/gpu-support.md](../docs/gpu-support.md#size-cost-per-architecture). Check a package before downloading it with `ngc registry model info nvidia/maxine/<feature>:<version>_models_linux_sm<N>`. The build summary prints the model size per architecture, so the cost is visible.
+Each architecture adds the model packages of every selected feature that has models. In 1.3.0.0 Linux only green screen, denoising and relighting have them. For `sm_120` that is about 113 MiB, 3.7 MiB and 79 MiB. The sizes for every architecture are in [../docs/gpu-support.md](../docs/gpu-support.md#size-cost-per-architecture). Check a package before downloading it with `ngc registry model info`. The build summary prints the model size per architecture, so the cost is visible:
+
+```sh
+ngc registry model info nvidia/maxine/<feature>:<version>_models_linux_sm<N>
+```
 
 The build stops in two cases:
 

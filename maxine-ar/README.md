@@ -1,6 +1,6 @@
 # maxine-ar: the Maxine AR SDK as a local package
 
-This recipe builds `maxine-ar-sdk-local`, a local Arch package of the NVIDIA Maxine AR SDK 1.2.0.0, from your own download. Several projects on the machine can share the package. You need this page to build the package by hand. [`scripts/setup.sh`](../scripts/setup.sh) does the same steps with questions ([../INSTALL.md](../INSTALL.md)).
+This recipe builds `maxine-ar-sdk-local`, a local Arch package of the NVIDIA Maxine AR (augmented reality) SDK 1.2.0.0, from your own download. Several projects on the machine can share the package. You need this page to build the package by hand. [`scripts/setup.sh`](../scripts/setup.sh) does the same steps with questions ([../INSTALL.md](../INSTALL.md)).
 
 You download the SDK yourself, after accepting NVIDIA's licence ([../docs/download.md](../docs/download.md)). This directory holds only the recipe ([`PKGBUILD`](PKGBUILD)). The built package contains NVIDIA software: keep it on your own machine and never share or upload it.
 
@@ -163,7 +163,11 @@ nvidia-smi --query-gpu=compute_cap --format=csv,noheader   # 12.0 -> sm_120
 
 In an SDK tree, a model file belongs to an architecture when one of the underscore-separated fields of its name is a known SM number: `face_detection_multiprofile_120.engine.trtpkg` is `sm_120`. Files of the other architectures are left out. A file whose name carries no SM number is kept and listed in a note. That includes the files the core itself ships in `lib/models` (the face model `face_model3.nvf` and `face_model3.mtl`, `models.json`, and NVIDIA's custom-model script and its README), which are kept in both layouts. In a download, a file belongs to the architecture of its `models_linux_sm<N>` directory.
 
-Each architecture adds the model packages of every selected feature. In 1.2.0.0 Linux every feature has them. For `sm_120` they are 97,022,776 bytes (92.5 MiB) for eye contact, 50,317,792 bytes (48.0 MiB) for landmark detection, 30,129,624 bytes (28.7 MiB) for face box detection and 1,642,108 bytes (1.6 MiB) for face expressions. Check a package before downloading it with `ngc registry model info nvidia/maxine/<feature>:<version>_models_linux_sm<N>`. The build summary prints the model size per architecture, so the cost is visible.
+Each architecture adds the model packages of every selected feature. In 1.2.0.0 Linux every feature has them. For `sm_120` they are 97,022,776 bytes (92.5 MiB) for eye contact, 50,317,792 bytes (48.0 MiB) for landmark detection, 30,129,624 bytes (28.7 MiB) for face box detection and 1,642,108 bytes (1.6 MiB) for face expressions. Check a package before downloading it with `ngc registry model info`. The build summary prints the model size per architecture, so the cost is visible:
+
+```sh
+ngc registry model info nvidia/maxine/<feature>:<version>_models_linux_sm<N>
+```
 
 The build stops in two cases:
 

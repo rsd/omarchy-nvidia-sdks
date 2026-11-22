@@ -4,7 +4,7 @@ This guide gets the Maxine SDK files from NGC onto your disk, ready to build int
 
 Maxine is NVIDIA's family of AI video and audio effects. NGC (NVIDIA GPU Cloud) is NVIDIA's online catalogue, and `ngc` is its command line tool. You download the files yourself after you accept NVIDIA's licence. This repository does not contain, and cannot provide, any of them. Read the licence terms on the NGC pages before you accept them, and see the "Licence and personal use" section of the [README](../README.md#licences-and-caveats).
 
-An SDK is a software development kit: the libraries, headers and AI models a program uses. This page is a step-by-step guide for the Video Effects SDK 1.3.0.0 (Linux). The [Maxine AR SDK](#maxine-ar-sdk) 1.2.0.0 and the [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) 3.0.0 have their own sections further down. They use the same prerequisites and the same NGC tool. Until those sections, the commands and names on this page are the Video Effects ones (`maxine-vfx/download.sh`).
+An SDK is a software development kit: the libraries, headers and AI models a program uses. This page is a step-by-step guide for the Video Effects SDK 1.3.0.0 (Linux). The [Maxine AR SDK](#maxine-ar-sdk) 1.2.0.0 (AR stands for augmented reality) and the [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) 3.0.0 (AFX) have their own sections further down. They use the same prerequisites and the same NGC tool. Until those sections, the commands and names on this page are the Video Effects ones (`maxine-vfx/download.sh`).
 
 For every SDK, what is downloaded, from where and whether it needs a login is listed in [What is downloaded, and from where](#what-is-downloaded-and-from-where).
 
@@ -19,7 +19,12 @@ There are two ways to download:
 
 Steps 1 and 2 are yours: they need your NVIDIA login and your key.
 
-1. **Set up NGC once.** Follow [Prerequisites](#prerequisites) steps 1 to 4 below: join the NVIDIA Developer Program, select **Get Access**, create an API key, install `ngc` and run `ngc config set`. You enter the key only at the prompt of `ngc config set`. Never paste it into a chat or a shared document.
+1. **Set up NGC once.** Follow [Prerequisites](#prerequisites) steps 1 to 3 below: join the NVIDIA Developer Program, select **Get Access**, create an API key and install `ngc`. Then do step 4 yourself: run this command. You enter the key only at its prompt. Never paste it into a chat or a shared document.
+
+   ```bash
+   ngc config set
+   ```
+
 2. **Check that NGC accepts your key.** It is read-only and never prints the key:
 
    ```bash
@@ -41,15 +46,26 @@ Steps 1 and 2 are yours: they need your NVIDIA login and your key.
    ```
 
    *Success:* the script prints the next commands, and your files are in `~/Downloads/maxine`. If it stops, run the same command again: it skips what is complete.
-5. **Build and install.** Run the commands the script printed (see [Next step](#next-step)), or use `scripts/setup.sh --sdk vfx` to do both with questions. The build is `configure.sh` then `makepkg`. The install is `sudo pacman -U`, which you confirm yourself.
+5. **Build and install.** Run the commands the script printed (see [Next step](#next-step)), or let the guided script do both with questions:
 
-For the AR and Audio Effects SDKs, use `maxine-ar/download.sh` and `maxine-afx/download.sh` the same way.
+   ```bash
+   scripts/setup.sh --sdk vfx
+   ```
+
+   The build is `configure.sh` then `makepkg`. The install is `sudo pacman -U`, which you confirm yourself.
+
+For the AR and Audio Effects SDKs, use the same commands with these helpers:
+
+```bash
+maxine-ar/download.sh
+maxine-afx/download.sh
+```
 
 ## Prerequisites
 
 | Item | Requirement | Check |
 |---|---|---|
-| GPU | NVIDIA, compute capability 7.5 or newer (Turing and later) | `nvidia-smi --query-gpu=name,compute_cap --format=csv` |
+| GPU | NVIDIA, compute capability (CC, a number that names the GPU generation) 7.5 or newer (Turing and later) | `nvidia-smi --query-gpu=name,compute_cap --format=csv` |
 | Driver | 570.26 or newer | `nvidia-smi --query-gpu=driver_version --format=csv,noheader` |
 | System CUDA toolkit | Not needed. The SDK bundles CUDA 12.8, cuDNN 9 and TensorRT 10 and takes only `libcuda.so.1` from the driver (`nvidia-utils`) | |
 | Tools | `curl` (downloads files), `unzip` and `jq` (reads JSON), to install the NGC CLI | `sudo pacman -S --needed curl unzip jq` |
@@ -104,14 +120,14 @@ ngc --version
 ngc config set
 ```
 
-Run this yourself and answer the prompts interactively. The key is entered here and nowhere else: it never goes into a script, a log or your shell history. The one exception is the optional Audio Effects post-install step of `scripts/setup.sh`, which can take the key for NVIDIA's `download_features.sh` (see [The key](../INSTALL.md#the-key)). You can decline it.
+Run this yourself and answer the prompts interactively. The key is entered here and nowhere else: it never goes into a script, a log or your shell history. The one exception is the optional Audio Effects post-install step of `scripts/setup.sh`, which can take the key for NVIDIA's `download_features.sh` (see [The key](setup-script.md#the-key)). You can decline it.
 
 - API key: paste the `nvapi-...` key from step 2.
 - CLI output format: `ascii`.
 - org: the organisation of the account that has the Developer Program access. The prompt lists the organisations your key can see.
 - team and ace: press Enter to accept the defaults.
 
-The NGC CLI stores the key in `~/.ngc/config`. Nothing in this repository reads that file. `download.sh` and `configure.sh` never ask for, pass on or print the key. `scripts/setup.sh` asks for a key only for the optional Audio Effects post-install step, passes it only to NVIDIA's script in that script's environment, and never prints or stores it. It still never reads `~/.ngc` ([The key](../INSTALL.md#the-key)).
+The NGC CLI stores the key in `~/.ngc/config`. Nothing in this repository reads that file. `download.sh` and `configure.sh` never ask for, pass on or print the key. `scripts/setup.sh` asks for a key only for the optional Audio Effects post-install step, passes it only to NVIDIA's script in that script's environment, and never prints or stores it. It still never reads `~/.ngc` ([The key](setup-script.md#the-key)).
 
 Check access (read-only):
 
@@ -175,7 +191,7 @@ maxine-vfx/download.sh
 
 With no options the script:
 
-1. detects your GPU architecture with `nvidia-smi` (its `sm_` name: `sm_120` for an RTX 50 series card);
+1. detects your GPU architecture with `nvidia-smi` (its `sm_` name: SM stands for streaming multiprocessor, and the name is `sm_` plus the compute capability without the dot, `sm_120` for an RTX 50 series card);
 2. selects the `broadcast` preset: AI green screen, background blur and video noise removal, plus the SDK core;
 3. asks NGC for the size of every item (read-only) and prints a table: item, size, number of files and status (present, missing, incomplete, no model package, unavailable, or probe failed when NGC gave another error such as a timeout or a 5xx: that item is not downloaded and the run fails);
 4. asks `Download N items (X GiB) into DIR? [y/N]`;
@@ -226,7 +242,13 @@ The script only prints the last line. You run `sudo pacman -U` yourself. See [Ne
 
 ### Listing the features
 
-NGC hides the Maxine items from `ngc registry model list "nvidia/maxine/nvvfx*"`: every item has the access type `NOT_LISTED`, so that wildcard prints an empty table. `download.sh --list` instead asks about each known feature by name with `ngc registry model info` and prints its function, the closest NVIDIA Broadcast name, the size of its library and the size of its models for each chosen architecture:
+NGC hides the Maxine items from wildcard listing. Every item has the access type `NOT_LISTED`, so this command prints an empty table:
+
+```bash
+ngc registry model list "nvidia/maxine/nvvfx*"
+```
+
+`download.sh --list` instead asks about each known feature by name with `ngc registry model info` and prints its function, the closest NVIDIA Broadcast name, the size of its library and the size of its models for each chosen architecture:
 
 ```bash
 maxine-vfx/download.sh --list                  # your GPU
@@ -286,7 +308,7 @@ This is exactly the layout `maxine-vfx/assemble.sh` reads. The package needs onl
 
 ## Sizes
 
-NGC prints sizes with the label "MB" that are really MiB (2^20 bytes). This page and the script use MiB and GiB, stated explicitly. The sizes below are for `sm_120`, as reported by NGC for SDK 1.3.0.0 Linux.
+NGC prints sizes with the label "MB" that are really MiB (2^20 bytes). This page and the script use MiB and GiB (2^20 and 2^30 bytes), or GB (10^9 bytes), stated explicitly. The sizes below are for `sm_120`, as reported by NGC for SDK 1.3.0.0 Linux.
 
 | Item | Size | Files |
 |---|---|---|
@@ -340,7 +362,13 @@ Notes:
 
 ### More features
 
-The package contains the features you select from your download directory. To add one later, download its library and models into the same directory (`download.sh --features ...` or the manual commands above), run `maxine-vfx/configure.sh` again and rebuild. Nothing in the recipe changes: a feature the package has never seen needs no edit to the PKGBUILD.
+The package contains the features you select from your download directory. To add one later, download its library and models into the same directory with `download.sh --features` or the manual commands above, run `maxine-vfx/configure.sh` again and rebuild. For example, to add relighting:
+
+```bash
+maxine-vfx/download.sh --features nvvfxrelighting
+```
+
+Nothing in the recipe changes: a feature the package has never seen needs no edit to the PKGBUILD.
 
 ## Next step
 
@@ -351,7 +379,14 @@ maxine-vfx/configure.sh --src ~/Downloads/maxine                                
 maxine-vfx/configure.sh --src ~/Downloads/maxine --archs sm_120 --features all --write
 ```
 
-The second command validates the selection against what is present and writes `maxine-vfx/selection.conf`, which the PKGBUILD reads when it builds. The file is git-ignored because it holds a local path. The PKGBUILD takes each value from the environment variable of that name, else from `selection.conf`, else from its default (the source: the PKGBUILD directory; `sm_120`; `all`). Put nothing but `KEY=value` lines in it: it is parsed, not executed.
+The second command validates the selection against what is present and writes `maxine-vfx/selection.conf`, which the PKGBUILD reads when it builds. The file is git-ignored because it holds a local path. The PKGBUILD takes each value from the environment variable of that name, else from `selection.conf`, else from its default (the source: the PKGBUILD directory; `sm_120`; `all`). Put nothing but `KEY=value` lines in it: it is parsed, not executed. An environment variable overrides the file, and the file overrides the built-in default.
+
+`configure.sh --show` prints the current file. `--conf FILE` makes `configure.sh` read and write another file, such as the `selection.conf` of an AUR clone ([aur.md](aur.md)):
+
+```bash
+maxine-vfx/configure.sh --show
+maxine-vfx/configure.sh --src ~/Downloads/maxine --archs sm_120 --features all --conf FILE --write
+```
 
 Then build:
 
@@ -619,14 +654,24 @@ ngc registry model list "nvidia/maxine/nvvfxgreenscreen:*"          # the versio
 
 ### Authentication, configuration or access errors
 
-- **`Target 'nvidia/maxine/...' could not be found`**, or `download.sh` saying that the NGC CLI cannot see the SDK core. An NGC CLI that is not configured gives this message instead of "unauthorised". Run `ngc config set` yourself (step 4). The same message can mean an invalid or expired key, or that the machine is offline. The SDK core always exists, so a failure on it points at your setup and not at the item.
+- **`Target 'nvidia/maxine/...' could not be found`**, or `download.sh` saying that the NGC CLI cannot see the SDK core. An NGC CLI that is not configured gives this message instead of "unauthorised". Run this yourself (step 4):
+
+  ```bash
+  ngc config set
+  ```
+
+  The same message can mean an invalid or expired key, or that the machine is offline. The SDK core always exists, so a failure on it points at your setup and not at the item.
 - **`403 Response: Access Denied`** for an item. The item does not exist, or your account has no access to it. Check:
   - that you accepted the terms under **Get Access** in step 1, with the account that owns the key;
   - that the key includes the **NGC Catalog** service and has not expired (step 2);
   - that `ngc config set` has the organisation that holds the access (step 4);
   - that the name is right (`download.sh --list` shows the known names). Artifact reduction, for example, is not on NGC for 1.3.0.0.
 - **`402`** is a different case: the key and the Maxine access are fine, and the account has no entitlement to one model. See [HTTP 402](#http-402-the-key-works-the-account-has-no-access).
-- **Not sure which of these it is?** Run `scripts/check-ngc.sh`. It separates a missing key, an invalid or expired key, missing Maxine access and a missing entitlement ([Check your NGC credentials](#check-your-ngc-credentials)).
+- **Not sure which of these it is?** Run the check below. It separates a missing key, an invalid or expired key, missing Maxine access and a missing entitlement ([Check your NGC credentials](#check-your-ngc-credentials)).
+
+  ```bash
+  scripts/check-ngc.sh
+  ```
 - **Only `_woa` or `windows` entries, or an SDK with no Linux libraries.** Wrong tag: `_woa` is Windows on ARM. Use the `_linux` tags shown above.
 
 ### HTTP 402: the key works, the account has no access
@@ -646,9 +691,20 @@ HTTP 402 is not a key problem: the key authenticated, but the account is not ent
 
 ### The architecture is wrong or has no models
 
-`download.sh` takes the architecture from `nvidia-smi --query-gpu=compute_cap --format=csv,noheader`. The value `12.0` becomes `sm_120`, `8.6` becomes `sm_86` and `10.0` becomes `sm_100`: remove the dot. A GPU below 7.5 is not supported, and the script stops.
+`download.sh` takes the architecture from this command:
 
-- To use another architecture than the one detected, pass it: `download.sh --archs sm_89`. This is also needed when `nvidia-smi` is not available.
+```bash
+nvidia-smi --query-gpu=compute_cap --format=csv,noheader
+```
+
+The value `12.0` becomes `sm_120`, `8.6` becomes `sm_86` and `10.0` becomes `sm_100`: remove the dot. A GPU below 7.5 is not supported, and the script stops.
+
+- To use another architecture than the one detected, pass it. This is also needed when `nvidia-smi` is not available:
+
+  ```bash
+  maxine-vfx/download.sh --archs sm_89
+  ```
+
 - If the table says "no model package" for a feature, NGC has no models for that feature and architecture. In 1.3.0.0, background blur, video super resolution, upscale, TrueHDR and video frame generation have no model package. For green screen, denoising and relighting, check that your architecture is in the [table of architectures](gpu-support.md#architectures-with-models-in-1300-linux). A value that is not in the table, such as 8.7 or 12.1, has no exact model package.
 - The build stops with a missing models directory for a feature, architecture and NGC tag when a selected architecture has no models for a feature that has models in your download. Download the tag named in the message, or leave that architecture out of `MAXINE_VFX_ARCHS` (`configure.sh` shows what is present).
 
@@ -660,7 +716,11 @@ For a manual download, delete the incomplete directory and run the command again
 
 ### `ngc` is not on PATH
 
-`download.sh` stops and says so. Complete [step 3](#3-install-the-ngc-cli). The CLI is linked into `~/.local/bin`, which must be on your `PATH`. Check with `command -v ngc`.
+`download.sh` stops and says so. Complete [step 3](#3-install-the-ngc-cli). The CLI is linked into `~/.local/bin`, which must be on your `PATH`. Check with:
+
+```bash
+command -v ngc
+```
 
 ### Other
 

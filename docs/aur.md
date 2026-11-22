@@ -38,9 +38,21 @@ scripts/aur.sh --recipe maxine-vfx --check aur/maxine-vfx-sdk-local   # optional
 (cd aur/maxine-vfx-sdk-local && git add PKGBUILD .SRCINFO LICENSE && git commit -m '1.3.0.0-3' && git push)
 ```
 
-For a package not yet on the AUR, `git init -b master aur/<package>` and `git -C aur/<package> remote add origin ssh://aur@aur.archlinux.org/<package>.git` replace the clone: the first push creates it.
+For a package not yet on the AUR, these two commands replace the clone: the first push creates the package.
 
-`--aur` writes into the top of a git clone only, refuses a clone that holds any other file, and commits nothing. `scripts/aur.sh --recipe DIR` prints the AUR PKGBUILD and `--srcinfo` its `.SRCINFO`. `LICENSE` is the 0BSD licence the AUR submission guidelines recommend for package sources; it covers the AUR repository's files, not NVIDIA's software.
+```bash
+git init -b master aur/<package>
+git -C aur/<package> remote add origin ssh://aur@aur.archlinux.org/<package>.git
+```
+
+`--aur` writes into the top of a git clone only, refuses a clone that holds any other file, and commits nothing. To read what it would write, print the AUR PKGBUILD, or with `--srcinfo` its `.SRCINFO`:
+
+```bash
+scripts/aur.sh --recipe DIR
+scripts/aur.sh --recipe DIR --srcinfo
+```
+
+`LICENSE` is the 0BSD licence the AUR submission guidelines recommend for package sources; it covers the AUR repository's files, not NVIDIA's software.
 
 A helper or document change reaches AUR users only through a new pinned commit. Regenerate, bump `pkgrel`, and push. A change to a document that a recipe installs (`docs/usage.md` for the three Maxine packages, the recipe's `README.md` for Optical Flow and TensorRT) needs this too. Optionally run `namcap PKGBUILD` in the AUR clone, and `namcap` on a built package (which stays local).
 

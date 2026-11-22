@@ -1,8 +1,8 @@
 # nvidia-tensorrt: TensorRT as a local package
 
-This recipe builds `nvidia-tensorrt-sdk-local`, a local Arch package of NVIDIA TensorRT 11.4 for CUDA 13.4, installed under `/opt/nvidia/tensorrt`. Several projects on the machine can share it: for example an ONNX Runtime build with the TensorRT execution provider. You need this page to build the package by hand. [`scripts/setup.sh --sdk trt`](../scripts/setup.sh) does the same steps with questions ([../INSTALL.md](../INSTALL.md)).
+This recipe builds `nvidia-tensorrt-sdk-local`, a local Arch package of NVIDIA TensorRT 11.4 for CUDA 13.4, installed under `/opt/nvidia/tensorrt`. Several projects on the machine can share it: for example an ONNX Runtime build with the TensorRT execution provider. You need this page to build the package by hand. [`scripts/setup.sh --sdk trt`](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/scripts/setup.sh) does the same steps with questions ([INSTALL.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/INSTALL.md)).
 
-When you build, makepkg downloads TensorRT from NVIDIA under NVIDIA's licence, unless a copy is already on your machine ([Downloading](#downloading)). This directory holds only the recipe ([`PKGBUILD`](PKGBUILD)). The built package contains NVIDIA software: keep it on your own machine and never share or upload it.
+When you build, makepkg downloads TensorRT from NVIDIA under NVIDIA's licence, unless a copy is already on your machine ([Downloading](#downloading)). This directory holds only the recipe ([`PKGBUILD`](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/nvidia-tensorrt/PKGBUILD)). The built package contains NVIDIA software: keep it on your own machine and never share or upload it.
 
 The package version is TensorRT's full version, `11.4.0.106`, read from `include/NvInferVersion.h`. Arch's `cuda` package provides the CUDA 13 runtime it runs on.
 
@@ -10,7 +10,7 @@ The package version is TensorRT's full version, `11.4.0.106`, read from `include
 
 - An NVIDIA driver and Arch's `cuda` package, version 13.4 or newer and below 14. `pacman -U` pulls `cuda` in when it is missing.
 - Free disk space: the download is about 3.7 GB. The build also needs room for the archive's copy in `src/`, the extracted tree, the copy in `pkg/` and the package. The package is several GiB.
-- `makepkg`, `fakeroot` and `bsdtar` ([../INSTALL.md](../INSTALL.md#before-you-start)).
+- `makepkg`, `fakeroot` and `bsdtar` ([INSTALL.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/INSTALL.md#before-you-start)).
 - Optional: your own copy of the archive ([Downloading](#downloading)).
 
 ## Build and install
@@ -19,8 +19,10 @@ The package version is TensorRT's full version, `11.4.0.106`, read from `include
 cd nvidia-tensorrt
 ./configure.sh --src ~/Downloads --write   # optional: checks your file and saves it
 PKGEXT=.pkg.tar makepkg -f                 # downloads the archive when no source is found
-sudo pacman -U nvidia-tensorrt-sdk-local-11.4.0.106-2-x86_64.pkg.tar
+sudo pacman -U nvidia-tensorrt-sdk-local-11.4.0.106-<pkgrel>-x86_64.pkg.tar
 ```
+
+`<pkgrel>` is the recipe's release number: read `pkgrel=` in the `PKGBUILD`, or the file name `makepkg` wrote.
 
 For a download, makepkg checks the file against the pinned SHA-256 before it is used. The same checks then apply as to a file you supplied. To keep the download in `~/Downloads`, run `SRCDEST=~/Downloads makepkg -f`: a copy already there is reused. `PKGEXT=.pkg.tar` skips a slow compression.
 
@@ -42,7 +44,7 @@ PKG_CONFIG_PATH=/opt/nvidia/tensorrt/lib/pkgconfig pkg-config --modversion nvidi
  ldd /opt/nvidia/tensorrt/lib/libnvinfer.so | grep 'not found')
 ```
 
-Both version lines must read `11.4.0.106`, and the `ldd` command prints nothing. More checks and troubleshooting are in [../docs/tensorrt.md](../docs/tensorrt.md#check-the-installation).
+Both version lines must read `11.4.0.106`, and the `ldd` command prints nothing. More checks and troubleshooting are in [docs/tensorrt.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/tensorrt.md#check-the-installation).
 
 ## Uninstall
 

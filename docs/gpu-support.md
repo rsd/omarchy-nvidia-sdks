@@ -1,21 +1,25 @@
 # GPU support of the Maxine Video Effects SDK
 
-This guide tells you which GPUs the Maxine Video Effects SDK 1.3.0.0 (Linux) supports, how to find your GPU's architecture, and how to fetch the models for another GPU. It applies to the `maxine-vfx-sdk-local` package. For the AR and Audio Effects SDKs, see [AR and Audio Effects SDKs](#ar-and-audio-effects-sdks).
+This guide tells you which GPUs the Maxine Video Effects SDK 1.3.0.0 (Linux) supports, how to find your GPU's architecture, and how to fetch the models for another GPU. It applies to the `maxine-vfx-sdk-local` package. For the AR (augmented reality) and Audio Effects (AFX) SDKs, see [AR and Audio Effects SDKs](#ar-and-audio-effects-sdks).
 
 An SDK is a software development kit: the libraries, headers and AI models a program uses. The package contains the models of the architectures you select, so the architecture decides what you download and what you build.
 
 ## Quick start
 
-1. Ask the driver for your GPU's compute capability (a number that names the GPU generation):
+1. Ask the driver for your GPU's compute capability (CC, a number that names the GPU generation):
 
    ```bash
    nvidia-smi --query-gpu=compute_cap --format=csv,noheader
    ```
 
    *Success:* it prints one line per GPU, such as `12.0`.
-2. Remove the dot and put `sm_` in front. `12.0` is `sm_120`, and `8.6` is `sm_86`. That is your architecture.
+2. Remove the dot and put `sm_` in front (SM stands for streaming multiprocessor). `12.0` is `sm_120`, and `8.6` is `sm_86`. That is your architecture.
 3. Look it up in [Architectures with models in 1.3.0.0 Linux](#architectures-with-models-in-1300-linux). If it is below 7.5, or not in the table, this SDK cannot use your GPU.
-4. Pass it where a command asks for it, for example `maxine-vfx/download.sh --archs sm_120`. If you leave `--archs` out, `download.sh` detects the architecture itself.
+4. Pass it where a command asks for it. If you leave `--archs` out, `download.sh` detects the architecture itself. For example:
+
+   ```bash
+   maxine-vfx/download.sh --archs sm_120
+   ```
 
 ## Requirements
 
@@ -54,7 +58,11 @@ nvidia-smi --query-gpu=compute_cap --format=csv,noheader
 
 The output has one line per GPU. `12.0` means `sm_120`, `8.6` means `sm_86`, `10.0` means `sm_100`: remove the dot. Below 7.5 the GPU is not supported. A value that is not in the table has no model package.
 
-`maxine-vfx/download.sh` runs this query itself when you do not pass `--archs` (`--archs auto`, the default), and uses every different architecture it finds. `maxine-vfx/configure.sh --detect-gpu` runs the same query when you ask for it. The package build never queries the GPU: you select the architectures explicitly.
+`maxine-vfx/download.sh` runs this query itself when you do not pass `--archs` (`--archs auto`, the default), and uses every different architecture it finds. `configure.sh` runs the same query when you ask for it. The package build never queries the GPU: you select the architectures explicitly.
+
+```bash
+maxine-vfx/configure.sh --detect-gpu
+```
 
 ## Fetching models for another GPU
 
@@ -72,7 +80,11 @@ To use a GPU of another architecture (a second machine, a new card), fetch that 
    ngc registry model download-version nvidia/maxine/nvvfxgreenscreen:1.3.0.0_models_linux_sm89 --dest ~/Downloads/maxine
    ```
 
-   Both put the new directories next to the ones you already have. Repeat for denoising and relighting if you use them. To see what NGC offers for an architecture first, run `maxine-vfx/download.sh --list --archs sm_89`.
+   Both put the new directories next to the ones you already have. Repeat for denoising and relighting if you use them. To see what NGC offers for an architecture first, run:
+
+   ```bash
+   maxine-vfx/download.sh --list --archs sm_89
+   ```
 
 2. Select the architectures to package. This validates against what is present in `~/Downloads/maxine` and writes `maxine-vfx/selection.conf`:
 
@@ -82,7 +94,11 @@ To use a GPU of another architecture (a second machine, a new card), fetch that 
 
 3. Rebuild and reinstall the package, as described in [download.md](download.md#next-step).
 
-`configure.sh --src ~/Downloads/maxine` without other options lists what your download contains and what the SDK offers; see [download.md](download.md) and [INSTALL.md](../INSTALL.md#choose-features-and-architectures).
+This command, without other options, lists what your download contains and what the SDK offers. See [download.md](download.md#next-step):
+
+```bash
+maxine-vfx/configure.sh --src ~/Downloads/maxine
+```
 
 ### Size cost per architecture
 
@@ -112,7 +128,13 @@ The SDK ships `features/install_feature.sh`. Given a `-g <gpu>` value from the t
 
 - It installs into `/usr/local/VideoFX` and needs root.
 - Its feature listing (`--list-features`) needs an NGC API key in the environment variable `NGC_CLI_API_KEY`.
-- Its result is an SDK tree. A tree it installed (for example `/usr/local/VideoFX`) is a valid tree-mode source: `MAXINE_VFX_SRC=/usr/local/VideoFX` (or `configure.sh --src /usr/local/VideoFX`) builds the package from it, packaging the features and models it holds. The reasons not to use it are the root access and the files it leaves under `/usr/local`, outside the package manager.
+- Its result is an SDK tree. A tree it installed (for example `/usr/local/VideoFX`) is a valid tree-mode source. This command builds the package from it, packaging the features and models it holds:
+
+  ```bash
+  cd maxine-vfx && MAXINE_VFX_SRC=/usr/local/VideoFX makepkg -f
+  ```
+
+  You can also select it with `configure.sh --src /usr/local/VideoFX`. The reasons not to use it are the root access and the files it leaves under `/usr/local`, outside the package manager.
 
 The NGC resource names it uses, read from the script, are the same ones this repository's commands use:
 
@@ -148,6 +170,12 @@ Notes:
 - **Pascal and older are not supported.** Both helpers stop on an architecture below `sm_75` and say so. An architecture that is not in the list (for example 8.7 or 12.1) has no exact model package: the helpers warn and show "no model package" for it.
 - **Driver.** Both packages depend on `nvidia-utils` for `libcuda.so.1` and bundle their own CUDA, cuDNN and TensorRT. This repository's sources state no separate minimum driver for these two SDKs; the 570.26 above is the figure given for the Video Effects SDK, which bundles the same CUDA version.
 - **The helpers detect the GPU** the same way as `maxine-vfx/download.sh`: `--archs auto` (the default) asks `nvidia-smi` for the compute capability and uses every different architecture it finds. The builds never query the GPU, and `configure.sh --detect-gpu` runs the query only when you ask for it.
-- **Fetching another GPU's models** follows [Fetching models for another GPU](#fetching-models-for-another-gpu), with the helper and the tags of the package you are using, for example `maxine-ar/download.sh --archs sm_89`. The manual commands are in [download.md](download.md#ar-sdk-download-by-hand) and [download.md](download.md#afx-sdk-download-by-hand).
+- **Fetching another GPU's models** follows [Fetching models for another GPU](#fetching-models-for-another-gpu), with the helper and the tags of the package you are using, for example:
+
+  ```bash
+  maxine-ar/download.sh --archs sm_89
+  ```
+
+  The manual commands are in [download.md](download.md#ar-sdk-download-by-hand) and [download.md](download.md#afx-sdk-download-by-hand).
 - **Size per architecture.** For the AR SDK and `sm_120` the models are 92.5 MiB for eye contact, 48.0 MiB for landmark detection, 28.7 MiB for face box detection and 1.6 MiB for face expressions; each further architecture adds the same kind of set. For the Audio Effects SDK each architecture adds the models of every selected feature at every sample rate present. `download.sh --list --archs all` prints the size NGC reports for each item, and the build summary prints the model size per architecture. Package only the architectures of the machines you build for.
 - **If the build stops** with a missing models directory, a selected feature lacks models for a selected architecture (or, for the Audio Effects SDK, for one of its sample rates): the message names the feature, the architecture and the NGC tag to download, or you can leave that architecture out of the selection.

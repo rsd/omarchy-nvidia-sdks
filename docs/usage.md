@@ -1,6 +1,6 @@
 # Using the Maxine SDK packages
 
-This guide shows how a program loads a Maxine SDK after you install its package: `maxine-vfx-sdk-local` (Video Effects), `maxine-ar-sdk-local` (AR) or `maxine-afx-sdk-local` (Audio Effects). Maxine is NVIDIA's family of AI video and audio effects. Each package installs this page as `/usr/share/doc/<package>/usage.md`.
+This guide shows how a program loads a Maxine SDK after you install its package: `maxine-vfx-sdk-local` (Video Effects, VFX), `maxine-ar-sdk-local` (AR, augmented reality) or `maxine-afx-sdk-local` (Audio Effects, AFX). Maxine is NVIDIA's family of AI video and audio effects. Each package installs this page as `/usr/share/doc/<package>/usage.md`.
 
 All three packages follow the same pattern:
 
@@ -10,13 +10,13 @@ All three packages follow the same pattern:
 
 The sections from "What the package installs" to "Troubleshooting" describe the Video Effects package. The [Maxine AR SDK](#maxine-ar-sdk) and [Maxine Audio Effects SDK](#maxine-audio-effects-sdk) sections describe the other two. For the Optical Flow SDK and TensorRT packages, see [Other packages](#other-packages-optical-flow-and-tensorrt).
 
-Related pages: [../INSTALL.md](../INSTALL.md) installs the packages. [download.md](download.md), [../maxine-vfx/README.md](../maxine-vfx/README.md), [../maxine-ar/README.md](../maxine-ar/README.md) and [../maxine-afx/README.md](../maxine-afx/README.md) cover the build. [gpu-support.md](gpu-support.md) lists supported GPUs and architectures.
+Related pages: [INSTALL.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/INSTALL.md) installs the packages. [download.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/download.md), [maxine-vfx/README.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/maxine-vfx/README.md), [maxine-ar/README.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/maxine-ar/README.md) and [maxine-afx/README.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/maxine-afx/README.md) cover the build. [gpu-support.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/gpu-support.md) lists supported GPUs and architectures.
 
-The package contains NVIDIA software and is for your own machine only. See the "Licence and personal use" section of the [README](../README.md#licences-and-caveats). NVIDIA does not support this configuration (Arch, distributions the SDK does not list, client-side use).
+The package contains NVIDIA software and is for your own machine only. See the "Licence and personal use" section of the [README](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/README.md#licences-and-caveats). NVIDIA does not support this configuration (Arch, distributions the SDK does not list, client-side use).
 
 ## Quick start
 
-Install the package first ([INSTALL.md](../INSTALL.md)). Then run any program that uses the Video Effects package like this. Replace `<program>` with the program's command. For the AR and Audio Effects packages, use the commands in their sections below.
+Install the package first ([INSTALL.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/INSTALL.md)). Then run any program that uses the Video Effects package like this. Replace `<program>` with the program's command. For the AR and Audio Effects packages, use the commands in their sections below.
 
 1. Load the environment file in your shell. This sets the library paths for this shell only:
 
@@ -74,11 +74,11 @@ MAXINE_VFX_ARCHS=sm_120
 
 `MAXINE_VFX_FEATURES` and `MAXINE_VFX_ARCHS` are informational: comma-separated lists, without spaces, of the features and architectures that were packaged. The library path has one `features/<feature>/lib` entry for every packaged feature, sorted by name, between `lib` and the bundled CUDA and TensorRT directories. The example grows with what you download: a package built with more features lists more entries, and more architectures lengthen `MAXINE_VFX_ARCHS`. The file never sets `LD_PRELOAD`.
 
-The package is one package, not one per feature, because the feature set is only known after reading your download; the reasons are in [../maxine-vfx/README.md](../maxine-vfx/README.md).
+The package is one package, not one per feature, because the feature set is only known after reading your download; the reasons are in [maxine-vfx/README.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/maxine-vfx/README.md).
 
 Two uses:
 
-- In a systemd unit: `EnvironmentFile=/usr/share/maxine-vfx/maxine-vfx.env`.
+- In a systemd unit: `EnvironmentFile=-/usr/share/maxine-vfx/maxine-vfx.env`. The leading `-` makes a missing file no error: without it the unit fails to start when the package is removed.
 - In a shell, for one command or one session:
 
   ```bash
@@ -91,7 +91,7 @@ Never source the file from a login profile, `~/.bashrc` or `~/.profile`. The bun
 
 The SDK's model loader reads `/etc/os-release` and refuses distributions that are not on NVIDIA's list. The error it returns, `-1209` ("no kernel image is available for execution on the device"), is misleading: no CUDA error occurs, and only the `ID` and `VERSION_ID` fields are read.
 
-`os-release-shim.so` is a compatibility shim for distributions the SDK does not list. It is an `LD_PRELOAD` library: inside a process that preloads it, a read-only open of exactly `/etc/os-release` opens the file named by the environment variable `MAXINE_OS_RELEASE` instead, and every other call passes through unchanged. Only that process is affected, the real file is untouched and no root is needed. The shim does not modify the SDK, the models or their encryption. NVIDIA does not support this configuration.
+`os-release-shim.so` is a compatibility shim for distributions the SDK does not list. It is an `LD_PRELOAD` library: inside a process that preloads it, a read-only open of exactly `/etc/os-release` opens the file named by the environment variable `MAXINE_OS_RELEASE` instead, and every other call passes through unchanged. Only that process is affected, the real file is untouched and no root is needed. The shim does not modify the SDK or the models. NVIDIA does not support this configuration.
 
 Set `MAXINE_OS_RELEASE_DEBUG=1` to make the shim log each redirect on stderr, which shows whether it is active. The package's environment file sets only `MAXINE_OS_RELEASE`.
 
@@ -132,19 +132,13 @@ Generic drop-in, for any user service that loads the SDK, at `~/.config/systemd/
 
 ```ini
 [Service]
-EnvironmentFile=/usr/share/maxine-vfx/maxine-vfx.env
+EnvironmentFile=-/usr/share/maxine-vfx/maxine-vfx.env
 Environment=LD_PRELOAD=/usr/lib/maxine-vfx/os-release-shim.so
 ```
 
-Example for omarchy-broadcast, `~/.config/systemd/user/omarchy-broadcastd.service.d/maxine.conf`, with the same content:
+The leading `-` in `EnvironmentFile=-` makes a missing file no error. Without it the unit fails to start when the package is removed.
 
-```ini
-[Service]
-EnvironmentFile=/usr/share/maxine-vfx/maxine-vfx.env
-Environment=LD_PRELOAD=/usr/lib/maxine-vfx/os-release-shim.so
-```
-
-Then:
+omarchy-broadcast applies this environment itself, so it needs no drop-in. The same content works for its daemon at `~/.config/systemd/user/omarchy-broadcastd.service.d/maxine.conf`. Then:
 
 ```bash
 systemctl --user daemon-reload
@@ -177,7 +171,13 @@ optdepends=('maxine-vfx-sdk-local: NVIDIA Maxine video effects')
 
 The package also provides `maxine-vfx-sdk=1.3.0.0`. A consumer that needs particular features can check `MAXINE_VFX_FEATURES` in the environment file at run time; it lists the features that were packaged.
 
-When you build the package for a consumer, name the features it needs with `MAXINE_VFX_FEATURES=<list>`: the build fails when one of them is missing from your download. omarchy-broadcast, for example, needs green screen and background blur, so build with `MAXINE_VFX_FEATURES=nvvfxgreenscreen,nvvfxbackgroundblur`, or with `MAXINE_VFX_FEATURES=all` to package everything you downloaded. `maxine-vfx/configure.sh --src <dir>` shows what your download holds and `--write` saves the choice in the git-ignored `maxine-vfx/selection.conf` (an environment variable overrides it). The GPU architectures you can package are in [gpu-support.md](gpu-support.md).
+When you build the package for a consumer, name the features it needs with `MAXINE_VFX_FEATURES=<list>`: the build fails when one of them is missing from your download. omarchy-broadcast, for example, needs green screen and background blur, so build with `MAXINE_VFX_FEATURES=nvvfxgreenscreen,nvvfxbackgroundblur`, or with `MAXINE_VFX_FEATURES=all` to package everything you downloaded. This command shows what your download holds, and `--write` saves the choice in the git-ignored `maxine-vfx/selection.conf` (an environment variable overrides it):
+
+```bash
+maxine-vfx/configure.sh --src <dir>
+```
+
+The GPU architectures you can package are in [gpu-support.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/gpu-support.md).
 
 ## Check the installation
 
@@ -257,7 +257,7 @@ MAXINE_AR_ARCHS=sm_120
 
 `MAXINE_AR_FEATURES` and `MAXINE_AR_ARCHS` are informational: comma-separated lists of what was packaged. The library path has one `features/<feature>/lib` entry per packaged feature, sorted by name, between `lib` and the bundled CUDA and TensorRT directories. The file never sets `LD_PRELOAD`.
 
-Load it for one program only: as `EnvironmentFile=/usr/share/maxine-ar/maxine-ar.env` in a systemd unit, or for one command or session with:
+Load it for one program only: as `EnvironmentFile=-/usr/share/maxine-ar/maxine-ar.env` in a systemd unit, or for one command or session with:
 
 ```bash
 set -a; . /usr/share/maxine-ar/maxine-ar.env; set +a
@@ -278,11 +278,16 @@ A systemd user unit, at `~/.config/systemd/user/<service>.service.d/maxine-ar.co
 
 ```ini
 [Service]
-EnvironmentFile=/usr/share/maxine-ar/maxine-ar.env
+EnvironmentFile=-/usr/share/maxine-ar/maxine-ar.env
 Environment=LD_PRELOAD=/usr/lib/maxine-ar/os-release-shim.so
 ```
 
-Then `systemctl --user daemon-reload` and restart the service. Remove the file, reload and restart to go back to the unit without the SDK.
+Then reload systemd and restart the service. Remove the file, reload and restart to go back to the unit without the SDK.
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart <service>.service
+```
 
 ### Models (AR)
 
@@ -332,9 +337,16 @@ MAXINE_AFX_ARCHS=sm_120
 MAXINE_AFX_RATES=48k
 ```
 
-`MAXINE_AFX_FEATURES`, `MAXINE_AFX_ARCHS` and `MAXINE_AFX_RATES` are informational: comma-separated lists of what was packaged. The library path is `nvafx/lib`, one `features/<feature>/lib` per packaged feature (sorted by name), then `features/speaker_focus/lib` and `features/superres/lib` (optional features NVIDIA distributes separately; listed even when not packaged, so adding them under the same root later needs no change, and a missing directory on the path is harmless; not repeated when packaged), then `external/cuda/lib`; there is no separate TensorRT directory, it is in `external/cuda/lib`. The path is needed because the feature libraries are loaded by `libnv_audiofx.so`, and their own search path does not reach `external/cuda/lib`. The file never sets `LD_PRELOAD`.
+`MAXINE_AFX_FEATURES`, `MAXINE_AFX_ARCHS` and `MAXINE_AFX_RATES` are informational: comma-separated lists of what was packaged. The library path has these entries, in order:
 
-Load it for one program only, in the same two ways as the other packages (`EnvironmentFile=/usr/share/maxine-afx/maxine-afx.env`, or `set -a; . /usr/share/maxine-afx/maxine-afx.env; set +a`), and never from a login profile.
+1. `nvafx/lib`;
+2. one `features/<feature>/lib` per packaged feature, sorted by name;
+3. `features/speaker_focus/lib` and `features/superres/lib`. These are optional features that NVIDIA distributes separately. They are listed even when not packaged, so adding them under the same root later needs no change, and a missing directory on the path is harmless. They are not repeated when packaged;
+4. `external/cuda/lib`. There is no separate TensorRT directory: TensorRT is in `external/cuda/lib`.
+
+The path is needed because the feature libraries are loaded by `libnv_audiofx.so`, and their own search path does not reach `external/cuda/lib`. The file never sets `LD_PRELOAD`.
+
+Load it for one program only, in the same two ways as the other packages (`EnvironmentFile=-/usr/share/maxine-afx/maxine-afx.env`, or `set -a; . /usr/share/maxine-afx/maxine-afx.env; set +a`), and never from a login profile.
 
 ### The shim and running a program (AFX)
 
@@ -349,7 +361,7 @@ A systemd user unit, at `~/.config/systemd/user/<service>.service.d/maxine-afx.c
 
 ```ini
 [Service]
-EnvironmentFile=/usr/share/maxine-afx/maxine-afx.env
+EnvironmentFile=-/usr/share/maxine-afx/maxine-afx.env
 Environment=LD_PRELOAD=/usr/lib/maxine-afx/os-release-shim.so
 ```
 
@@ -376,7 +388,7 @@ With the environment file applied, the `ldd` command prints nothing. Use a featu
 
 ## Other packages: Optical Flow and TensorRT
 
-Two further packages are not Maxine SDKs and have their own pages: `nvidia-optical-flow-sdk-local` (the NVIDIA Optical Flow SDK, [optical-flow.md](optical-flow.md)) and `nvidia-tensorrt-sdk-local` (TensorRT, [tensorrt.md](tensorrt.md)). They follow the same rules as the three above: each installs under its own directory in `/opt/nvidia/`, has an environment file you load for one program or one build, and sets no environment variable globally (the TensorRT package does add a system library path entry, described below). They need no shim.
+Two further packages are not Maxine SDKs and have their own pages: `nvidia-optical-flow-sdk-local` (the NVIDIA Optical Flow SDK, [optical-flow.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/optical-flow.md)) and `nvidia-tensorrt-sdk-local` (TensorRT, [tensorrt.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/tensorrt.md)). They follow the same rules as the three above: each installs under its own directory in `/opt/nvidia/`, has an environment file you load for one program or one build, and sets no environment variable globally (the TensorRT package does add a system library path entry, described below). They need no shim.
 
 | Package | Directory | Environment file | Library path key |
 |---|---|---|---|
@@ -391,7 +403,7 @@ A program that combines these with a Maxine SDK loads several environment files.
 The TensorRT package is the exception to the rule that a program must opt in:
 
 - It installs an `/etc/ld.so.conf.d` entry, so its TensorRT 11 is on the system loader path.
-- It links the builder-resource libraries into `/usr/lib` under their TensorRT 11 file names, because `libnvinfer` opens them by file name (see [the TensorRT guide](tensorrt.md#what-the-package-installs)). Those links carry the `.11.4.0` names, so they never stand in for a TensorRT 10 library of a Maxine SDK.
+- It links the builder-resource libraries into `/usr/lib` under their TensorRT 11 file names, because `libnvinfer` opens them by file name (see [the TensorRT guide](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/tensorrt.md#what-the-package-installs)). Those links carry the `.11.4.0` names, so they never stand in for a TensorRT 10 library of a Maxine SDK.
 - It does not shadow the TensorRT 10 that the Maxine SDKs bundle. The sonames differ (`libnvinfer.so.11` against `libnvinfer.so.10`), and the `LD_LIBRARY_PATH` from a Maxine SDK's environment file is searched before the loader cache.
 - A program that combines them therefore no longer needs `NVIDIA_TRT_LIBRARY_PATH` in its `LD_LIBRARY_PATH`.
 

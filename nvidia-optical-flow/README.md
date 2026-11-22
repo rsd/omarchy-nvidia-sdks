@@ -1,8 +1,8 @@
 # nvidia-optical-flow: the NVIDIA Optical Flow SDK as a local package
 
-This recipe builds `nvidia-optical-flow-sdk-local`, a local Arch package of the NVIDIA Optical Flow SDK 5.0.7, from your own download. Several projects on the machine can share the package. You need this page to build the package by hand. [`scripts/setup.sh --sdk of`](../scripts/setup.sh) does the same steps with questions ([../INSTALL.md](../INSTALL.md)).
+This recipe builds `nvidia-optical-flow-sdk-local`, a local Arch package of the NVIDIA Optical Flow SDK 5.0.7, from your own download. Several projects on the machine can share the package. You need this page to build the package by hand. [`scripts/setup.sh --sdk of`](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/scripts/setup.sh) does the same steps with questions ([INSTALL.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/INSTALL.md)).
 
-You download the SDK yourself, after accepting NVIDIA's licence. This directory holds only the recipe ([`PKGBUILD`](PKGBUILD)). The built package contains NVIDIA software: keep it on your own machine and never share or upload it.
+You download the SDK yourself, after accepting NVIDIA's licence. This directory holds only the recipe ([`PKGBUILD`](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/nvidia-optical-flow/PKGBUILD)). The built package contains NVIDIA software: keep it on your own machine and never share or upload it.
 
 The recipe is validated against NVIDIA's documented package contents (the SDK's release notes) using fake fixtures. The zip's exact layout is found by searching rather than by fixed paths, so small differences in directory names are tolerated. `./configure.sh` shows what it found before you build.
 
@@ -18,7 +18,7 @@ The recipe is validated against NVIDIA's documented package contents (the SDK's 
 - **The zip.** Sign in to the NVIDIA Developer Program at <https://developer.nvidia.com/opticalflow/download>, accept the licence and download `optical_flow_sdk_5.0.7.zip`. Nothing here downloads the SDK for you. NVIDIA publishes no checksum for the zip, so `configure.sh --write` records the SHA-256 of your download and the build verifies the zip against it.
 - **A GPU and driver.** The Optical Flow API is implemented by the NVIDIA driver, as `libnvidia-opticalflow.so` in `nvidia-utils`. An application loads it at run time with `dlopen`. NVIDIA documents a Turing or newer GPU and driver 525.85.05 or newer for SDK 5.0.
 - **What the SDK provides.** The headers, the samples, NvOFTracker and the prebuilt FRUC (frame rate up-conversion) library.
-- `makepkg`, `fakeroot` and `bsdtar` ([../INSTALL.md](../INSTALL.md#before-you-start)).
+- `makepkg`, `fakeroot` and `bsdtar` ([INSTALL.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/INSTALL.md#before-you-start)).
 
 ## Build and install
 
@@ -46,7 +46,7 @@ ldconfig -p | grep libnvidia-opticalflow
 grep '^NVIDIA_OF_FEATURES' /usr/share/nvidia-optical-flow/nvidia-optical-flow.env
 ```
 
-`ldconfig -p` must show `libnvidia-opticalflow.so.1`. If it does not, the driver's utilities (`nvidia-utils`) are missing or too old. Further checks, and troubleshooting, are in [../docs/optical-flow.md](../docs/optical-flow.md#check-the-installation).
+`ldconfig -p` must show `libnvidia-opticalflow.so.1`. If it does not, the driver's utilities (`nvidia-utils`) are missing or too old. Further checks, and troubleshooting, are in [docs/optical-flow.md](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/docs/optical-flow.md#check-the-installation).
 
 ## Uninstall
 
@@ -78,7 +78,7 @@ The SDK version comes from the zip's name (`optical_flow_sdk_5.0.7.zip`), else f
 
 ### Choosing with configure.sh
 
-[`configure.sh`](configure.sh) reads the source without network access and extracts nothing (a zip's member names are listed with `bsdtar -t`):
+[`configure.sh`](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/nvidia-optical-flow/configure.sh) reads the source without network access and extracts nothing (a zip's member names are listed with `bsdtar -t`):
 
 ```sh
 ./configure.sh --src ~/Downloads/optical_flow_sdk_5.0.7.zip           # what it holds
@@ -115,7 +115,7 @@ NVIDIA_OF_SRC=/home/you/Downloads/optical_flow_sdk_5.0.7.zip
 SHA256=<64 hexadecimal digits>
 ```
 
-The PKGBUILD reads it in `prepare()` only, so `makepkg --printsrcinfo` does not depend on it. [`selection.sh`](selection.sh) parses it as `KEY=value` lines and never sources or executes it. These stop the build with the line number:
+The PKGBUILD reads it in `prepare()` only, so `makepkg --printsrcinfo` does not depend on it. [`selection.sh`](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/nvidia-optical-flow/selection.sh) parses it as `KEY=value` lines and never sources or executes it. These stop the build with the line number:
 
 - an unknown key, or a line that is not `KEY=value`;
 - a key given twice, or an empty value;
@@ -125,7 +125,7 @@ The PKGBUILD reads it in `prepare()` only, so `makepkg --printsrcinfo` does not 
 
 ### What is searched for
 
-[`assemble.sh`](assemble.sh) finds the components, for `configure.sh` (`--scan`) and for the build alike:
+[`assemble.sh`](https://github.com/rsd/omarchy-nvidia-sdks/blob/main/nvidia-optical-flow/assemble.sh) finds the components, for `configure.sh` (`--scan`) and for the build alike:
 
 | Component | Found as | Required |
 |---|---|---|

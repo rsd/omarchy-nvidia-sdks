@@ -1,6 +1,6 @@
 # os-release-shim
 
-A small `LD_PRELOAD` library that shows one process a replacement `/etc/os-release`. You need it to run the Maxine SDKs on a distribution that NVIDIA does not list. The Maxine packages build and install it for you.
+A small `LD_PRELOAD` library that shows one process a replacement `/etc/os-release`. You need it to run the Maxine SDKs (software development kits) on a distribution that NVIDIA does not list. The Maxine packages build and install it for you.
 
 The model loader of the NVIDIA Maxine Video Effects SDK reads `/etc/os-release` and refuses distributions it does not list. On such a distribution `NvVFX_Load` fails with `-1209`. With the shim preloaded, the program that loads the SDK reads a replacement file naming a listed distribution instead. This is a compatibility shim. NVIDIA does not support this configuration.
 
@@ -91,4 +91,4 @@ If the library file is missing, the dynamic loader prints `ERROR: ld.so: object 
 
 ## Support note
 
-This is a compatibility shim for distributions the SDK does not list; NVIDIA does not support this configuration. It changes only what the process that preloads it reads as `/etc/os-release`; it does not modify `/etc/os-release` on disk, the SDK, the models or their encryption. Read the licence you accepted from NVIDIA; this note is not legal advice.
+This is a compatibility shim for distributions the SDK does not list; NVIDIA does not support this configuration. It changes only what the process that preloads it reads as `/etc/os-release`; it does not modify `/etc/os-release` on disk, the SDK or the models. Read the licence you accepted from NVIDIA; this note is not legal advice.

@@ -2,9 +2,15 @@
 
 This guide builds and installs `nvidia-optical-flow-sdk-local` from your own download of the NVIDIA Optical Flow SDK 5.0.7. It is for the person who builds the package and for programs that use it.
 
-Optical flow measures how each part of an image moves between two video frames. An SDK is a software development kit: headers, libraries and samples. The package installs the SDK's headers, the FRUC (frame rate up-conversion) library when your download has it, and the samples and the NvOFTracker as source, under `/opt/nvidia/optical-flow`. The Optical Flow runtime itself, `libnvidia-opticalflow.so`, is not part of the SDK. It comes from the NVIDIA driver (`nvidia-utils`).
+Optical flow measures how each part of an image moves between two video frames. An SDK is a software development kit: headers, libraries and samples. The package installs the SDK's headers, the FRUC (frame rate up-conversion) library when your download has it, and the samples and the SDK's tracker, NvOFTracker, as source, under `/opt/nvidia/optical-flow`. The Optical Flow runtime itself, `libnvidia-opticalflow.so`, is not part of the SDK. It comes from the NVIDIA driver (`nvidia-utils`).
 
-`scripts/setup.sh --sdk of` runs the steps below for you ([INSTALL.md](../INSTALL.md)). The recipe's own reference, with every build input and the rules for what is searched for, is [../nvidia-optical-flow/README.md](../nvidia-optical-flow/README.md).
+This command runs the steps below for you ([INSTALL.md](../INSTALL.md)):
+
+```bash
+scripts/setup.sh --sdk of
+```
+
+The recipe's own reference, with every build input and the rules for what is searched for, is [../nvidia-optical-flow/README.md](../nvidia-optical-flow/README.md).
 
 The package contains NVIDIA software and is for your own machine only. See the "Licence and personal use" section of the [README](../README.md#licences-and-caveats) and [Licence notes](#licence-notes) below. NVIDIA does not support this configuration (Arch Linux, a package built by a third-party recipe).
 
@@ -12,7 +18,7 @@ The recipe was written and tested against NVIDIA's documented layout of the SDK 
 
 ## Quick start
 
-Before you start, you need an NVIDIA RTX GPU (Turing or newer), an Arch-based distribution, the NVIDIA driver (525.85.05 or newer for this SDK) and a free NVIDIA Developer Program account. This SDK needs no NGC account and no API key.
+Before you start, you need an NVIDIA RTX GPU (Turing or newer), an Arch-based distribution, the NVIDIA driver (525.85.05 or newer for this SDK) and a free NVIDIA Developer Program account. This SDK needs no NGC (NVIDIA GPU Cloud) account and no API key.
 
 1. **Download the file. This step is yours** (it needs your NVIDIA login and your acceptance of NVIDIA's licence). Open <https://developer.nvidia.com/opticalflow/download>, log in, read the NVIDIA DesignWorks SDK License and select "Accept & Download" for `optical_flow_sdk_5.0.7.zip`. Save it in `~/Downloads`.
 2. **Look first.** This is read-only:
@@ -29,7 +35,11 @@ Before you start, you need an NVIDIA RTX GPU (Turing or newer), an Arch-based di
    ```
 
    *Success:* section `7. Check` shows `ok` for `of`, and the exit status is 0.
-4. **Check by hand** (see [Check the installation](#check-the-installation)): `ldconfig -p` must list `libnvidia-opticalflow.so.1`.
+4. **Check by hand** (see [Check the installation](#check-the-installation)): this command must list `libnvidia-opticalflow.so.1`:
+
+   ```bash
+   ldconfig -p | grep libnvidia-opticalflow
+   ```
 
 If a step fails, see [Troubleshooting](#troubleshooting).
 
@@ -70,7 +80,7 @@ sudo pacman -U nvidia-optical-flow-sdk-local-5.0.7-*-x86_64.pkg.tar*
 | `/opt/nvidia/optical-flow/licenses/` and the top-level files | The SDK's licence, readme and release notes |
 | `/usr/share/nvidia-optical-flow/nvidia-optical-flow.env` | The environment file described below |
 
-Nothing goes into `/usr/include`, `/usr/lib` or `/etc`, and nothing is set globally. FRUC's bundled CUDA runtime would otherwise shadow the system's for every program. The package depends on `nvidia-utils` and provides `nvidia-optical-flow-sdk`. It does not conflict with the AUR package `nvidia-opticalflow-headers`, which installs older headers in `/usr/include`: the two install disjoint paths, so a program built against one sees only that one.
+Nothing goes into `/usr/include`, `/usr/lib` or `/etc`, and nothing is set globally. FRUC's bundled CUDA runtime would otherwise shadow the system's for every program. The package depends on `nvidia-utils` and provides `nvidia-optical-flow-sdk`. It does not conflict with the AUR (Arch User Repository) package `nvidia-opticalflow-headers`, which installs older headers in `/usr/include`: the two install disjoint paths, so a program built against one sees only that one.
 
 ## The environment file
 
